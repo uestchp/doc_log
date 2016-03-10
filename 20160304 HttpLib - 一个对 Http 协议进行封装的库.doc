@@ -1,0 +1,62 @@
+﻿HttpLib - 一个对 Http 协议进行封装的库
+补充说明：
+现在项目已经迁移到 GitHub, 地址：https://github.com/j6mes/httplib/
+ 
+今日，在 Codeplex 上看到一个开源项目，对 Http 协议进行了封装，这下可以方便这些在 .NET 平台下访问 Web 服务器的同学们了，比如，从 Web 服务器抓取一个页面，使用 .NET 而不是借助浏览器向服务器发一个 Post 请求之类的操作，就可以直接调用一下实现好的方法了。
+项目的地址：http://httplib.codeplex.com/
+也可以直接到下载页面下载你需要的源代码或者编译完成的类库。
+下载页面的地址：http://httplib.codeplex.com/releases/view/99620
+
+项目比较新，所以下载量看来并不大。
+项目的使用说明：
+在项目的首页上有一个简短的说明，虽然简单，但是比较使用。
+Project 说明
+HttpLib  使得在 C# 中异步地访问 Web 服务器上的数据变得更加容易。 库中包含了将文件上传到服务器中以及从服务器下载页面的方法。
+这个项目设计用来访问当前已经存在的 Web 服务。如果你计划创建新的包含服务器端和客户端的应用，建议考虑使用 WCF.
+支持的 HTTP 方法 
+GET
+POST
+Form Encoded
+Multipart File Upload
+PUT
+HEAD
+DELETE
+示例
+首先，在项目中引用 httplib 程序集。
+在代码的开头部门，一般先 using 命名空间。
+using Redslide.HttpLib
+从服务器端获取内容。比如抓取页面。
+Request.Get("http://google.com/", 
+result=>
+{
+    Console.Write(result);
+});
+向服务器提交信息，使用 Post 方式。提交的参数使用一个对象表示。
+Request.Post("http://testing.local/post.php", new {name="james",username="Redslide"}, 
+result=>
+{
+    Console.Write(result);
+});
+以 Post 方式提交信息，如果出现异常，捕获异常。
+
+Request.Post("http://testing.local/post.php", new { name = "value"}, 
+result=>
+{
+    Console.Write(result);
+}, 
+e=>
+{
+    Console.Write(e.ToString());
+});
+
+上传文件到服务器，第三个参数是上传文件。
+
+Request.Upload("http://testing.local/post.php", new {name = "value"}, new[] {
+    new NamedFileStream("file", "photo.jpg", "image/jpeg", new FileStream(@"C:\photo.jpg",FileMode.Open))
+}, 
+result=>
+{
+    Console.Write(result);
+});
+
+

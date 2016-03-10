@@ -1,0 +1,27 @@
+使用jingdo来下载旧版本的Debian系统
+飘云 操作系统 围观2027次 留下评论 编辑日期：2013-11-06 15:03:24 字体：大 中 小
+
+在开始用Debian之前，需要到 Debian Installer下载 testing ISO，很多人一看要下载几十个ISO头都大了。其实只下载第一个ISO就已经可以了，里面包含了非常流行且常用的软件包、XWindow及完整的 Gnome桌面，但即使下载第一张ISO，经常下载下来如不立即使用，过不多久，新的ISO又已经形成，又想下新的。
+
+其实新的ISO全部更新的包并不多，而重新下载新的ISO文件很浪费时间，并且对网络镜像造成不必要的冲击，想想Ubuntu8.04发布时，巨大的下载负荷让cn99源的硬盘都给挂了，一时耽误了很多人使用。Jigdo 就是为了缓解庞大的 CD 和 DVD 光盘映像文件对 Debian 镜像网络造成的冲击而开发出来的。
+
+由于 Jigdo 一边下载软件包，会立即把下载的软件包写入 CD 光盘映像文件，然后把这个软件包删除，再开始下载下一个软件包，不会浪费硬盘空间，所以比较适合经常安装新系统的人。
+
+步骤：
+一、到Jigdo主页 http://atterer.net/jigdo/下载各平台相应的软件包。以 Windows 平台举例：下载 jigdo-lite 0.7.2 for Windows 版本, 大小1773 kB。下载之后，解压 ZIP 包后就可以运行，不需要编译。
+二、运行 jigde-lite.bat 则会提示需要CD 光盘映像文件的 .jigdo 索引文件，然后系统会在 jigde-lite.bat 同一目录中会生成 jigdo-lite-settings.txt文件。
+
+现在到 http://cdimage.debian.org/cdimage/archive/ 找到自己所需要下载的版本，如我的是X86计算机，我需要安装32位的系统。找到：http://cdimage.debian.org/cdimage/archive/4.0_r9/i386/jigdo-dvd/，复制文件路径：http://cdimage.debian.org/cdimage/archive/4.0_r9/i386/jigdo-dvd/debian-40r9-i386-DVD-1.jigdo，然后粘到 jigdo-lite-settings.txt jigdo= 后中。
+
+jigdo-lite-settings.txt参考配置如下：
+
+    jigdo=’http://cdimage.debian.org/cdimage/archive/4.0_r9/amd64/jigdo-dvd/debian-40r9-amd64-DVD-1.jigdo’ jigdo文件路径
+    debianMirror=’ftp://ftp.debian.org/debian/’ debian的官方镜像路径
+    nonusMirror=”
+    tmpDir=’.’
+    jigdoOpts=’–cache jigdo-file-cache.db’
+    wgetOpts=’–passive-ftp –dot-style=mega –continue –timeout=30′
+    scanMenu=’E:\linux\debian\’ 文件保存路径
+
+三、再次运行 jigde-lite.bat，一路提示按回车，一切顺利的话，你就等着下载完毕刻光盘了。
+Jigdo 把一个庞大的映像文件分割成了许多的小软件包，就可以从靠近用户的多个镜像站点同时下载了。这样一来，下载速度会提高了不少。当然，这里理论上的，我实际 上测试，下载时间比直接下载ISO文件要多用一个小时约4个小时，平时下也就近3个小时，不过以后再下载时间就会省很多。

@@ -1,0 +1,65 @@
+﻿2016-01-07 21:34:35 
+分类： Android平台
+http://blog.csdn.net/ce123/article/details/6925375
+
+引言 
+         初学嵌入式linux开发的时候大家都用的工具链版本多是3.4.5或3.4.2，名字为arm-linux-gcc或arm-softfloat- linux-gnu-gcc，可突然有一天发现这几个版本的编译器无法编译最新的内核了，并且发现人们都换了工具链了（arm-none-linux- gnueabi-gcc）。于是也都换成了这个工具链，编译内核，制作跟文件系统，按部就班的做，和以前没什么区别。可是紧接着问题来了，当内核启动到最 后阶段挂载文件系统是出现如下错误：kernel panic:attempted to kill init。或者什么错误都不提示，只是永远进入不了终端。
+
+这是什么问题呢，答案是大家需要在内核配置的时候选择上如下内容：
+
+make menuconfig
+        Kernel Features --->
+                [*] Use the ARM EABI to compile the kernel
+                [*] Allow old ABI binaries to run with this kernel (EXPERIMENTAL)
+
+选上这两项重新编译内核，发现上面提到的问题就解决了，为什么呢，这两个选项是什么东西呢。在这里得提到几个概念：
+
+ABI:application binary interface
+OABI:old application binary interface
+EABI:Embedded application binary interface
+
+上面两项选中后在内核的配置文件.config中CONFIG_AEABI和CONFIG_OABI_COMPAT会被设置为“y”，CONFIG_AEABI表示现在内核为EABI，CONFIG_OABI_COMPAT表示兼容OABI。
+
+为什么这两个选项会影响到我们的系统启动呢。
+
+           这两个选项可以选择任意一个，也可以都选。这里涉及到两个结构sys_call_table和sys_oabi_call_table，这两个表是一个内核的跳转表，存放的是系统调用的指针，这些指针就是系统调用函数的指针，如(sys_open).系统调用是根据一个调用号（通常就是表的索引）找到实际该调用内核哪个函数，然后运行该函数完成的。 
+         首先，对于old ABI,内核给出的处理是给它建立一个单独的system call table,叫sys_oabi_call_table，这样，兼容方式下就会有两个system call table, 以old ABI方式的系统调用会执行sys_oabi_call_table表中的系统调用函数，EABI方式的系统调用会用sys_call_table中的函 数指针。
+　　配置无外乎以下4中
+　　第一， 两个宏都配置。行为就是上面说的那样。
+　　第二 ，只配置CONFIG_OABI_COMPAT。 那么以old ABI方式调用的会用sys_oabi_call_table，以EABI方式调用的用sys_call_table，和1实质相同，只是情况1更加明确。
+　　第三， 只配置CONFIG_AEABI 。系统中不存在 sys_oabi_call_table， 对old ABI方式调用不兼容。只能 以EABI方式调用，用sys_call_table。
+　　第四 ，两个都没有配置。 系统默认会只允许old ABI方式，但是不存在sys_oabi_call_table，最终会通过sys_call_table 完成函数调用。
+因为CONFIG_OABI_COMPAT对CONFIG_AEABI有依赖关系所以不能只选择CONFIG_OABI_COMPAT。
+
+什么是ABI 
+ABI，application binary interface (ABI)，应用程序二进制接口。既然是 接口，那就是某两种东西之间的沟通桥梁，此处有这些种情况：
+A.应用程序 <－> 操作系统；
+B.应用程序 <－> （应用程序所用到的）库
+C.应用程序各个组件之间
+
+ABI类似于API的作用是使得程序的代码间的兼容，ABI目的是使得程序的二进制（级别）的兼容。
+
+         ABI通常是处理器体系结构的一部分，它与平台是紧密相连的。 我们可以把ABI理解为一套规则，这套规则一般包括定义了以下内容：
+1.应用程序如何发出系统调用来trap到内核态。 
+2.如何使用机器的寄存器。比如，RISC处理器的ABI就要规定用那个通用寄存器来作stack pointer和frame pointer。 
+3.规定如何进行procedure call。
+什么是OABI 和 EABI 
+          OABI中的O，表示“Old”，“Lagacy”，旧的，过时的，OABI就是旧的/老的ABI。
+          EABI中的E，表示“Embedded”，是一种新的ABI。Embedded application binary interface， 即嵌入式应用二进制接口，是描述可连接目标代码，库目标代码，可执行文件影像，如何连接，执行和调试，以及目标代码生成过程，和C/ C++语言接口的规范，是编译连接工具的基础规范，也是研究它们工作原理的基础，可惜ARM的EABI迄今为止没有完全订好。作为EABI的组成部分有过 程调用规范，可执行文件格式规范，c/c++ ABI规范和调试格式规范。EABI，说的是这样的一种新的系统调用方式 。
+          EABI有时候也叫做GNU EABI。
+          OABI和EABI都是专门针对ARM的CPU来说的。
+
+EABI的好处 
+1. 支持软件浮点和硬件实现浮点功能混用 
+2. 系统调用的效率更高 
+3. 后今后的工具更兼容 
+4. 软件浮点的情况下，EABI的软件浮点的效率要比OABI高很多。 
+OABI和EABI的区别 
+两种ABI在如下方面有区别：
+1. 调用规则（包括参数如何传递及如何获得返回值） 
+2. 系统调用的数目以及应用程序应该如何去做系统调用 
+3. 目标文件的二进制格式，程序库等 
+4. 结构体中的 填充（padding/packing）和对齐。 
+注意：对于同一套系统，比如uboot，kernel，rootfs等等，编译器最好是用同一版本的，要么是oabi要么是eabi，否则不同版本的不同的东西混用，很容易出问题的。 
+
+

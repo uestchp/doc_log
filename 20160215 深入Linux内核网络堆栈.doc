@@ -1,0 +1,513 @@
+﻿Hacking the Linux Kernel Network Stack 2013-01-19 15:09:27 
+分类： LINUX
+前 一段时间看到这篇帖子，确实很经典，于是翻出了英文原版再读，顺便再翻译出来供大家学习，这篇文章的中文版也早都有了，不过出于完全理解的目的，我还是将 它翻译了出来，加进了自己的代码，虽然在上一周的翻译过程中，我尽量保留文章的原汁原味，但错误肯定在所难免，在末尾附上原文和我自己调试通过的代码，已 经够构运行，大家可以参考一下！（有错误之处请指出） 
+
+深入Linux内核网络堆栈 
+
+作者：bioforge alkerr@yifan.net  
+原名： <<Hacking the Linux Kernel Network Stack>> 
+翻译，修改： duanjigang <duanjigang1983@126.com> 
+翻译参考：raodan (raod_at_30san.com) 2003-08-22  
+
+第一章  简介 
+
+本文将描述如何利用Linux网络堆栈的窍门（不一定都是漏洞）来达到一些目的，或者是恶意的，或者是出于其它意图的。文中会就后门通讯对Netfilter钩子进行讨论，并在本地机器上实现将这个传输从基于Libpcap的嗅探器(sniffer)中隐藏。 
+    Netfilter是2.4内核的一个子系统。Netfilter可以通过在内核的网络代码中使用各种钩子来实现数据包过滤，网络地址转换(NAT)和连 接跟踪等网络欺骗。这些钩子被放置在内核代码段，或者静态编译进内核，或者作为一个可动态加载/卸载的可卸载模块，然后就可以注册称之为网络事件的函数 （比如数据包的接收）。 
+
+1.1 本文论述的内容 
+
+本 文将讲述内核模块的编写者如何利用Netfilter的钩子来达到任何目的，以及怎样将网络传输从一个Libpcap的应用中隐藏掉。尽管 Linux2.4支持对IPV4，IPV6以及DECnet的钩子,本文只提及IPV4的钩子。但是，对IPV4的大多数应用内容同样也可以应用于其他协 议。出于教学目的，我们在附录A给出了一个可以工作的内核模块，实现基本的数据包过滤功能。针对本文中所列技术的所有开发和试验都在Intel机子上的 Linux2.4.5系统上进行过。对Netfilte 钩子行为的测试使用的是回环设备(Loopback device),以太网设备和一个点对点接口的调制解调器。 
+对 Netfilter进行完全理解是我撰写本文的另一个初衷。我不能保证这篇文章所附的代码100%的没有差错，但是所列举的所有代码我都事先测试过了。我 已经饱尝了内核错误带来的磨砺，而你却不必再经受这些。同样，我不会为按照这篇文档所说的任何东西进行的作所所为带来的损失而负责。阅读本篇文章的读者最 好熟悉C程序设计语言，并且对内核可卸载模块有一定的经验。 
+如果我在文中犯了任何错误的话，请告知我。我对于你们的建议和针对此文的改进或者其它的Netfilter应用会倾心接受。 
+
+1.2 本文不会涉及到的方面 
+
+本文并不是Netfilter的完全贯穿(或者进进出出的讲解)。也不是iptables命令的介绍。如果你想更好的学习iptables的命令，可以去咨询man手册。 
+让我们从介绍Nerfilter的使用开始吧………. 
+
+第二章  各种NetFilter 钩子及其用法 
+
+2.1 Linux内核对数据包的处理 
+
+我 将尽最大努力去分析内核处理数据包的详细内幕，然而对于事件触发处理以及之后的Netfilter 钩子不做介绍。原因很简单，因为Harald Welte 关于这个已经写了一篇再好不过的文章<<Journey  of a Packet Through the Linux 2.4 Network Stack>>,如果你想获取更多关于Linux对数据包的相关处理知识的话，我强烈建议你也阅读一下这篇文章。目前，就认为数据包只是经过 了Linux内核的网络堆栈，它穿过几层钩子,在经过这些钩子时，数据包被解析，保留或者丢弃。这就是所谓的Netfilter 钩子。 
+
+2.2 Ipv4中的Netfilter钩子 
+
+Netfilter为IPV4定义了5个钩子。可以在 linux/netfilter-ipv4.h里面找到这些符号的定义，表2.1列出了这些钩子。 
+
+表 2.1. ipv4中定义的钩子 
+1. 钩子名称                              调用时机   
+2. NF_IP_PRE_ROUTING                完整性校验之后，路由决策之前 
+3. NF_IP_LOCAL_IN                         目的地为本机，路由决策之后 
+4. NF_IP_FORWARD                         数据包要到达另外一个接口去 
+5. NF_IP_LOCAL_OUT                        本地进程的数据，发送出去的过程中 
+6. NF_IP_POST_ROUTING        向外流出的数据上线之前 
+复制代码
+
+NF_IP_PRE_ROUTING 钩子称为是数据包接收后第一个调用的钩子程序，这个钩子在我们后面提到的模块当中将会被用到。其他的钩子也很重要，但是目前我们只集中探讨NF_IP_PRE_ROUTING这个钩子。 
+不管钩子函数对数据包做了哪些处理，它都必须返回表2.2中的一个预定义好的Netfilter返回码。 
+表2.2 Netfilter 返回码 
+1. 返回码                  含义 
+2. NF_DROP              丢弃这个数据包 
+3. NF_ACCEPT        保留这个数据包 
+4. NF_STOLEN        忘掉这个数据包 
+5. NF_QUEUE        让这个数据包在用户空间排队 
+6. NF_REPEAT        再次调用这个钩子函数 
+复制代码
+
+NF_DROP 表示要丢弃这个数据包，并且为这个数据包申请的所有资源都要得到释放。NF_ACCEPT告诉Netfilter到目前为止，这个数据包仍然可以被接受， 应该将它移到网络堆栈的下一层。NF_STOLEN是非常有趣的一个返回码，它告诉Netfilter让其忘掉这个数据包。也就是说钩子函数会在这里对这 个数据包进行完全的处理，而Netfilter就应该放弃任何对它的处理了。然而这并不意味着为该数据包申请的所有资源都要释放掉。这个数据包和它各自的 sk_buff结构体依然有效，只是钩子函数从Netfilter夺取了对这个数据包的掌控权。不幸的是，我对于NF_QUEUE这个返回码的真实作用还 不是很清楚，所在目前不对它进行讨论。最后一个返回值NF_REPEAT请求Netfilter再次调用这个钩子函数，很明显，你应该慎重的应用这个返回 值，以免程序陷入死循环。 
+
+第三章  注册和注销NetFilter 钩子 
+
+注册一个钩子函数是一个围绕nf_hook_ops结构体的很简单的过程，在linux/netfilter.h中有这个结构体的定义，定义如下: 
+1. struct nf_hook_ops  
+2. { 
+3.                   struct list_head list; 
+4. 
+5.                   /* User fills in from here down. */ 
+6.                   nf_hookfn *hook; 
+7.                   int pf; 
+8.                   int hooknum; 
+9.                   /* Hooks are ordered in ascending priority. */ 
+10.                   int priority; 
+11. }; 
+复制代码
+
+这 个结构体的成员列表主要是用来维护注册的钩子函数列表的，对于用户来说，在注册时并没有多么重要。hook是指向nf_hookfn函数的指针。也就是为 这个钩子将要调用的所有函数。nf_hookfn同样定义在linux/netfilter.h这个文件中。pf字段指定了协议簇(protocol family)。Linux/socket.h中定义了可用的协议簇。但是对于IPV4我们只使用PF_INET。hooknum 域指名了为哪个特殊的钩子安装这个函数，也就是表2.1中所列出的条目中的一个。Priority域表示在运行时这个钩子函数执行的顺序。为了演示例子模 块，我们选择NF_IP_PRI_FIRST这个优先级。 
+   注册一个Netfilter钩子要用到nf_hook_ops这个结构体和nf_register_hook()函数。 nf_register_hook()函数以一个nf_hook_ops结构体的地址作为参数，返回一个整型值。如果你阅读了net/core /netfilter.c中nf_register_钩子()的源代码的话，你就会发现这个函数只返回了一个0。下面这个例子注册了一个丢弃所有进入的数 据包的函数。这段代码同时会向你演示Netfilter的返回值是如何被解析的。 
+
+代码列表1. Netfilter钩子的注册 
+1. /* Sample code to install a Netfilter hook function that will 
+2. * drop all incoming packets. */ 
+3. #define __KERNEL__ 
+4. #define MODULE 
+5. #include <linux/module.h> 
+6. #include <linux/kernel.h> 
+7. #include <linux/netfilter.h> 
+8. #include <linux/netfilter_ipv4.h> 
+9. 
+10. /* This is the structure we shall use to register our function */ 
+11. 
+12. static struct nf_hook_ops nfho; 
+13. 
+14. /* This is the hook function itself */ 
+15. 
+16. unsigned int hook_func(unsigned int hooknum, 
+17. struct sk_buff **skb, 
+18. const struct net_device *in, 
+19. const struct net_device *out, 
+20. int (*okfn)(struct sk_buff *)) 
+21. { 
+22. 
+23. return NF_DROP;           /* Drop ALL packets */ 
+24. } 
+25. 
+26. /* Initialisation routine */ 
+27. int init_module() 
+28. { 
+29. 
+30. /* Fill in our hook structure */ 
+31. nfho.hook = hook_func;         /* Handler function */ 
+32. nfho.hooknum  = NF_IP_PRE_ROUTING; /* First hook for IPv4 */ 
+33. nfho.pf       = PF_INET; 
+34. nfho.priority = NF_IP_PRI_FIRST;   /* Make our function first */ 
+35. nf_register_hook(&nfho); 
+36. return 0; 
+37. } 
+38. 
+39. /* Cleanup routine */ 
+40. void cleanup_module() 
+41. { 
+42. nf_unregister_hook(&nfho); 
+43. } 
+复制代码
+
+
+这就是注册所要做的一切。从代码列表1你可以看到注销一个Netfilter钩子也是很简单的一件事情，只需要调用nf_unregister_hook()函数，并将注册时用到的结构体地址再次作为注销函数参数使用就可以了。 
+第四章  基本的NetFilter数据包过滤技术 
+4.1 钩子函数近距离接触 
+现在是我们来查看获得的数据如何传入钩子函数并被用来进行过滤决策的时候了。所以，我们需要更多的关注于nf_hookfn函数的模型。Linux/netfilter.h给出了如下的接口定义： 
+1. typedef unsigned int nf_hookfn(unsigned int hooknum, 
+2.                               struct sk_buff **skb, 
+3.                               const struct net_device *in, 
+4.                               const struct net_device *out, 
+5.                               int (*okfn)(struct sk_buff *)); 
+复制代码
+
+nf_hookfn 函数的第一个参数指定了表2.1给出的钩子类型中的一种。第二个参数更有趣，它是一个指向指针(这个指针指向一个sk_buff类型的结构体)的指针，它 是网络堆栈用来描述数据包的结构体。这个结构体定义在linux/skbuff.h中，由于这个结构体的定义很大，这里我只着重于它当中更有趣的一些域。 
+或 许sk_buff结构体中最有用的域就是其中的三个联合了，这三个联合描述了传输层的头信息(例如 UDP，TCP，ICMP，SPX)，网络层的头信息（例如ipv4/6, IPX, RAW）和链路层的头信息（Ethernet 或者RAW）。三个联合相应的名字分别为：h，nh和mac。根据特定数据包使用的不同协议，这些联合包含了不同的结构体。应当注意，传输层的头和网络层 的头极有可能在内存中指向相同的内存单元。在TCP数据包中也是这样的情况，h和nh都是指向IP头结构体的指针。这就意味着，如果认为h->th 指向TCP头，从而想通过h->th来获取一个值的话，将会导致错误发生。因为h->th实际指向IP头，等同于nh->iph。 
+其他比较有趣的域就是len域和data域了。len表示包中从data开始的数据总长度。因此，现在我们就知道如何通过一个skbuff结构体去访问单个的协议头或者数据包本身的数据。还有什么有趣的数据位对于Netfilter的钩子函数而言是有用的呢？ 
+跟 在sk_buff之后的两个参数都是指向net_device结构体的指针。net_devices结构体是Linux内核用来描述各种网络接口的。第一 个结构体，in，代表了数据包将要到达的接口，当然 out就代表了数据包将要离开的接口。有很重要的一点必须认识到，那就是通常情况下这两个参数最多只提供一个。 例如，in通常情况下只会被提供给NF_IP_PRE_ROUTING和NF_IP_LOCAL_IN钩子。out通常只被提供给 NF_IP_LOCAL_OUT和NF_IP_POST_ROUTING钩子。在这个阶段，我没有测试他们中的那个对于NF_IP_FORWARD是可用 的。如果你能在废弃之前确认它们(in和out)不空的话，那么你很优秀。 
+最 后，传给钩子函数的最后一个参数是一个名为okfn的指向函数的指针，这个函数有一个sk_buff的结构体作为参数，返回一个整型值。我也不能确定这个 函数做什么，在net/core/netfilter.c中有两处对此函数的调用。这两处调用就是在函数nf_hook_slow（）和函数 nf_reinject（）里，在这两个调用处当Netfilter钩子的返回值为NF_ACCEPT时，此函数被调用。如果有谁知道关于okfn更详细 的信息，请告诉我。 
+现在我们已经对Netfilter接收到的数据中最有趣和最有用的部分进行了分析，下面就要开始介绍如何利用这些信息对数据包进行各种各样的过滤。 
+
+4.2 基于接口的过滤 
+这 将是我们能做的最简单的过滤技术。是否还记得我们的钩子函数接收到的net_device结构体?利用net_device结构体中的name键值，我们 可以根据数据包的目的接口名或者源接口名来丢弃这些数据包。为了抛弃所有发向”eth0”的数据，我们只需要比较一下“in->name”和 “eth0”，如果匹配的话，钩子函数返回NF_DROP，然后这个数据包就被销毁了。它就是这样的简单。列表2给出了示例代码。请注意轻量级防火墙 (LWFW)会使用到这里提到的所有过滤方法。LWFW同时还包含了一个IOCTL方法来动态改变自身的行为。 
+
+列表2. 基于源接口(网卡名)的数据过滤技术 
+1. /* Sample code to install a Netfilter hook function that will 
+2.           * drop all incoming packets from an IP address we specify */ 
+3. 
+4.           #define __KERNEL__ 
+5.           #define MODULE 
+6. 
+7.           #include <linux/module.h> 
+8.           #include <linux/kernel.h> 
+9.           #include <linux/skbuff.h> 
+10.           #include <linux/ip.h>                  /* For IP header */ 
+11.           #include <linux/netfilter.h> 
+12.           #include <linux/netfilter_ipv4.h> 
+13. 
+14.           /* This is the structure we shall use to register our function */ 
+15.           static struct nf_hook_ops nfho; 
+16. 
+17.           /* IP address we want to drop packets from, in NB order */ 
+18.           static unsigned char *drop_ip = "\x7f\x00\x00\x01"; 
+19. 
+20.           /* This is the hook function itself */ 
+21.           unsigned int hook_func(unsigned int hook_num, 
+22.                                  struct sk_buff **skb, 
+23.                                  const struct net_device *in, 
+24.                                  const struct net_device *out, 
+25.                                  int (*okfn)(struct sk_buff *)) 
+26.           { 
+27.               struct sk_buff *sb = *skb; 
+28. 
+29.               if (sb->nh.iph->saddr == drop_ip) { 
+30.                   printk("Dropped packet from... %d.%d.%d.%d\n", 
+31.                             *drop_ip, *(drop_ip + 1), 
+32.                           *(drop_ip + 2), *(drop_ip + 3)); 
+33.                   return NF_DROP; 
+34.               } else { 
+35.                   return NF_ACCEPT; 
+36.               } 
+37.           } 
+38. 
+39.           /* Initialisation routine */ 
+40.           int init_module() 
+41.           { 
+42.               /* Fill in our hook structure */ 
+43.               nfho.hook     = hook_func; 
+44.               /* Handler function */ 
+45.               nfho.hook_num  = NF_IP_PRE_ROUTING; /* First for IPv4 */ 
+46.               nfho.pf       = PF_INET; 
+47.               nfho.priority = NF_IP_PRI_FIRST;   /* Make our func first */ 
+48.            
+49.               nf_register_hook(&nfho); 
+50. 
+51.               return 0; 
+52.           } 
+53.            
+54.              /* Cleanup routine */ 
+55.           void cleanup_module() 
+56.           { 
+57.               nf_unregister_hook(&nfho); 
+58.           } 
+复制代码
+
+现在看看，是不是很简单？下面让我们看看基于IP地址的过滤技术。 
+4.3 基于IP地址的过滤 
+类 似基于接口的数据包过滤技术，基于源/目的IP地址的数据包过滤技术也很简单。这次我们对sk_buff结构体比较感兴趣。现在应该记起来，Skb参数是 一个指向sk_buff结构体的指针的指针。为了避免运行时出现错误，通常有一个好的习惯就是另外声明一个指针指向sk_buff结构体的指针，把它赋值 为双重指针所指向的内容，像这样： 
+1. struct sk_buff *sb = *skb;    /* Remove 1 level of indirection* / 
+复制代码
+
+然 后你只需要引用一次就可以访问结构体中的成员了。可以使用sk_buff结构体中的网络层头信息来获取此数据包的IP头信息。这个头包含在一个联合中，可 以通过sk_buff->nh.iph来获取。列表3的函数演示了当给定一个数据包的sk_buff结构时，如何根据给定的要拒绝的IP对这个数据 包进行源IP地址的检验。这段代码是直接从LWFW中拉出来的。唯一的不同之处就是LWFW中对LWFW统计量的更新被去掉了。 
+列表3.检测接收到数据包的源IP地址 
+1. unsigned char *deny_ip = "\x7f\x00\x00\x01";  /* 127.0.0.1 */ 
+2. 
+3.           ... 
+4.           static int check_ip_packet(struct sk_buff *skb) 
+5.           { 
+6.               /* We don't want any NULL pointers in the chain to 
+7.                * the IP header. */ 
+8.               if (!skb )return NF_ACCEPT; 
+9.               if (!(skb->nh.iph)) return NF_ACCEPT; 
+10.               if (skb->nh.iph->saddr == *(unsigned int *)deny_ip)  
+11. {  
+12.                     return NF_DROP; 
+13.                } 
+14.                return NF_ACCEPT; 
+15.           } 
+复制代码
+
+如 果源IP地址与我们想抛弃数据包的IP地址匹配的话，数据包就会被丢弃。为了使函数能正常工作，deny_ip的值应该以网络字节序的方式存储（与 intel相反的Big-endian格式）。尽管这个函数在被调用的时候有一个空指针作参数这种情况不太可能，但是稍微偏执（小心）一点总不会有什么坏 处。当然，如果调用时出现了差错的话，函数将会返回一个NF_ACCEPT值，以便于Netfilter能够继续处理这个数据包。列表4 展现了一个简单的基于IP地址的数据包过滤的模块，这个模块是由基于接口的过滤模块修改得到的。你可以修改IP地址来实现对指定IP地址发来的数据包的丢 弃。 
+
+列表4. 基于数据包源IP地址的过滤技术 
+1. /* Sample code to install a Netfilter hook function that will 
+2.           * drop all incoming packets from an IP address we specify */ 
+3. 
+4.           #define __KERNEL__ 
+5. #define MODULE 
+6. #include <linux/module.h> 
+7.           #include <linux/kernel.h> 
+8.           #include <linux/skbuff.h> 
+9.           #include <linux/ip.h>                  /* For IP header */ 
+10.           #include <linux/netfilter.h> 
+11.           #include <linux/netfilter_ipv4.h> 
+12. 
+13.           /* This is the structure we shall use to register our function */ 
+14.           static struct nf_hook_ops nfho; 
+15. 
+16.           /* IP address we want to drop packets from, in NB order */ 
+17.           static unsigned char *drop_ip = "\x7f\x00\x00\x01"; 
+18. 
+19.           /* This is the hook function itself */ 
+20.           unsigned int hook_func(unsigned int hooknum, 
+21.                                  struct sk_buff **skb, 
+22.                                  const struct net_device *in, 
+23.                                  const struct net_device *out, 
+24.                                  int (*okfn)(struct sk_buff *)) 
+25.           { 
+26.               struct sk_buff *sb = *skb; 
+27. 
+28.               if (sb->nh.iph->saddr == drop_ip) { 
+29.                   printk("Dropped packet from... %d.%d.%d.%d\n", 
+30.                             *drop_ip, *(drop_ip + 1), 
+31.                           *(drop_ip + 2), *(drop_ip + 3)); 
+32.                   return NF_DROP; 
+33.               } else { 
+34.                   return NF_ACCEPT; 
+35.               } 
+36.           } 
+37. 
+38.           /* Initialisation routine */ 
+39.           int init_module() 
+40.           { 
+41.               /* Fill in our hook structure */ 
+42.               nfho.hook     = hook_func; 
+43.               /* Handler function */ 
+44.               nfho.hooknum  = NF_IP_PRE_ROUTING; /* First for IPv4 */ 
+45.               nfho.pf       = PF_INET; 
+46.               nfho.priority = NF_IP_PRI_FIRST;   /* Make our func first */ 
+47.               nf_register_hook(&nfho); 
+48.               return 0; 
+49.           } 
+50.               /* Cleanup routine */ 
+51.           void cleanup_module() 
+52.           { 
+53.               nf_unregister_hook(&nfho); 
+54.           } 
+复制代码
+
+
+4.4 基于TCP端口的过滤 
+另 外一个要执行的简单的规则就是基于TCP目的端口的数据包过滤。这比检验IP地址稍微复杂一点，因为我们要自己创建一个指向TCP头的指针。还记得前面关 于传输层头和网络层头所做的讨论吗？获得一个TCP头指针很简单，只需要申请一个指向tcphdr(定义在linux/tcp.h中)结构体的指针，并将 它指向包数据中的IP头后面。或许一个例子就可以了。列表5展示了怎样检测一个数据包的TCP目的端口与我们想丢弃数据的指定端口是否一致。与列表3一 样，这段代码也是从LWFW中拿出来的 
+列表5. 检测接收到数据包的TCP目的端口 
+1. unsigned char *deny_port = "\x00\x19";   /* port 25 */ 
+2.           ... 
+3.           static int check_tcp_packet(struct sk_buff *skb) 
+4.           { 
+5.               struct tcphdr *thead; 
+6.               /* We don't want any NULL pointers in the chain 
+7.                * to the IP header. */ 
+8.               if (!skb ) return NF_ACCEPT; 
+9.               if (!(skb->nh.iph)) return NF_ACCEPT; 
+10.               /* Be sure this is a TCP packet first */ 
+11.               if (skb->nh.iph->protocol != IPPROTO_TCP) { 
+12.                   return NF_ACCEPT; 
+13.               } 
+14.               thead = (struct tcphdr *)(skb->data  + (skb->nh.iph->ihl * 4)); 
+15.               /* Now check the destination port */ 
+16.               if ((thead->dest) == *(unsigned short *)deny_port) { 
+17.                   return NF_DROP; 
+18.               }     
+19.               return NF_ACCEPT; 
+20.           } 
+复制代码
+
+世纪上非常简单。不要忘了deny_port是网络字节序时，这个函数才能工作。数据包过滤技术的基础就是：对于一个特定的数据包，你必须对怎样到达你想要的信息段的方法非常了解。下面，我们将进入更有趣的世界。 
+第五章  NetFilter钩子其他可能的用法 
+
+在 这里我将会就Netfilter在其它方面的更有趣的应用给你作一些建议。在5.1我会给你提供一些思想源泉。5.2节将会讨论并提供能运行的代码，这个 代码使一个基于内核的FTP密码嗅探器，能够远程获取密码。事实上，它运行的很好以至于我有些惊恐，所以将它写了出来。 
+
+5.1 隐藏后门守护进程 
+
+内 核模块编程实际上是Linux开发最有意思的领域之一。在内核中写代码意味着你在一个只被你的想象力限制的地方写代码。从恶意一点的观点来思考，你可以隐 藏一个文件，一个进程，或者说你能做任何rootkit能实现的很酷的事情。或者说从不太恶意(有这种观点的人)的观点来说，你可以隐藏文件，进程，和各 种各样很酷的动作，内核真正是一个很迷人的地方。 
+        拥有一个内核级的程序员所具有的所有能力，许多事情都是可能的。或许最有趣（对于系统管理员来说这可是很恐怖的事情）的一件事情就是在内核植入一个后门程 序。毕竟，当一个后门没有作为进程而运行的时候，你怎么会知道它在运行？当然肯定存在一些可以使你的内核能够嗅到这些后门的方法,但是这些方法却绝不会象 运行PS命令那样的简单。将后门代码植入内核中并不是一个很新的话题。我这里要讲的，却是利用(你能够猜到的)Netfilter钩子植入简单的网络服 务，将之作为内核后门。 
+如 果你有必要的技能并且愿意承担在做实验时将你的内核导致崩溃的风险的话，你可以构造一个简单而有用的网络服务，将能够完全的装入内核并能进行远程访问。基 本上说，Netfilter可以从所有接收到的数据包中查找指定的“神秘”数据包，当这个神秘的数据包被接收到的时候，可以进行一些特殊的处理。结果可以 通过Netfilter钩子函数发送出去，Netfilter钩子函数然后返回一个NF_STOLEN结果以便这个神秘的数据包不会被继续传递下去。但是 必须注意一点，以这样的方式来发送输出数据的时候，向外发送的数据包对于输出Netfilter钩子函数仍然是可见的。因此对于用户空间来说，完全看不到 这个“神秘”数据包曾经来过，但是他们却能够看到你发送出来的数据。你必须留意，泄密主机上的Sniffer程序不能发现这个数据包并不意味着中间的宿主 机上的嗅探器(sniffer)也不能发现这个数据包。 
+Kossak 和lifeline曾为Phrack杂志写过一篇精彩的文章，文中描述了如何通过注册数据包类型处理器的方法来坐这些事情。虽然这片文章是关于 Netfilter钩子的，我还是强烈建议你阅读一下那片文章(Issue 55, file 12)，这片文章非常有趣，向你展示了很多有趣的思想。 
+那么，后门的Netfilter钩子到底能做哪种工作呢？好的，下面给出一些建议： 
+------- 远程访问的击键记录器。模块会记录键盘的点击并在远程客户机发送一个Ping包的时候，将结果发送给客户机。因此，一连串的击键记录信息流会被伪装成稳定 的Ping包返回流发送回来。你也可以进行简单的加密以便按键的ASC 值不会马上暴露出来，一些警觉的系统管理员回想：“坚持，我以前都是通过SSH会话来键入这些的，Oh $%@T%&!” 
+--------简单的管理任务，例如获取机器当前的登录用户列表，或者获取打开的网络连接信息。 
+--------一个并非真正的后门，而是位于网络边界的模块，并且阻挡任何被疑为来自特洛伊木马、ICMP隐蔽通道或者像KaZaa这样的文件共享工具的通信。 
+--------文件传输服务器。我最近已经实现了这个想法。最终得到的Linux内核模块会给你带来数小时的愉悦。 
+--------数据包跳跃。将发送到装有后门程序主机的特定端口的数据重新定向到另外一个IP主机的不同端口。并且将这个客户端发送的数据包返回给发起者。没有创建进程，最妙的是，没有打开网络套接字。 
+--------利用上面说到的数据包跳跃技术已以一种半传输的方式实现与网络上关键系统的交互。例如配置路由等。 
+--------FTP/POP3/Telnet的密码嗅探器。嗅探向外发送的密码并保存起来，直到神秘数据包到来所要这些信息的时候，就将它发送出去。 
+好了，上面是一些简单的思想列表。最后一个想法将会在下一节中进行详细的介绍，因为这一节为读者提供了一个很好的机会，使得我们能够接触更多的内核内部的网段络代码。 
+
+5.2 基于内核的FTP密码获取Sniffer 
+
+针 对前面谈到的概念，这里给出了一个例证—一个后门Netfilter程序。这个模块嗅探流向服务器的外出的FTP数据包，寻找USER和PASSWD命令 对，当获取到一对用户名和密码时，模块就会等待一个神秘的并且有足够大空间能存储用户名和密码的ICMP包（Ping包）的到来，收到这个包后，模块会将 用户名和密码返回。很快的发送一个神秘的数据包，获取回复并且打印信息。一旦一对用户名和密码从模块中读走都，模块便会开始下一对数据的嗅探。注意模块平 时最多能存储一对信息。已经大致介绍过了，我们现在对模块具体怎样工作进行详尽的讲解。当模块被加载的时候，init_module()函数简单的注册两 个Netfilter钩子。第一个钩子负责从进入的数据包（在NF_IP_PRE_ROUTING时机调用）中寻找神秘的ICMP数据包。另外一个负责监 视离开（在NF_IP_POST_ROUTING时调用）安装本模块的机器的数据包。在这里寻找和俘获FTP的登录用户名和密 码，cleanup_module()负责注销这两个钩子。 
+        watch_out()函数是在NF_IP_POST_ROUTING时调用的钩子函数。看一下这个函数你就会发现它的动作很简单。当一个数据包进入的时 候，它会被经过多重的检测以便确认这个数据包是否是一个FTP数据包。如果不是一个FTP数据包，将会立即返回一个NF_ACCEPT。如果是一个FTP 数据包，模块会确认是否已经获取并存储了一对用户名和密码。如果已经存储了的话(这时 have_pari变量的值非零)，那么就会返回一个NF_ACCPET值，并且数据包最终可以离开这个系统。否则的话，check_ftp()方法将会 被调用。通常在这里密码被提取出来，如果以前没有接收到数据包的话，target_ip和target_port这两个变量将会被清空。 
+        Check_ftp()一开始在数据段的开头寻找“USER”，“PASS”或者“QUIT”字段。注意，在没有“USER”字段被处理之前通常不处理 “PASS”字段。这是为了防止在收到密码后连接断开，而这时没有获取到用户名，就会陷入锁中。同样，当收到一个“QUIT”字段时，如果这时只有一个 “USER”字段的话，就将所有变量复位，以便于Sniffer能继续对新的连接进行嗅探。当“PASS”或者“USER”命令被收到时，在必要的完整性 校验之后，命令的参数会被拷贝下来。通常操作中都是在check_ftp()函数结束之前，检验有无用户名和密码者两个命令字段。如果有的 话，have_pair会被设置，并且在这对数据被取走之前不会再次获取新的用户名和密码。 
+        到目前为止你已经知道了这个模块怎样安装自己并且查找用户名和密码并记录下来。下面你将会看到“神秘”数据包到来时会发生什么。在这块儿要特别留意，因为 开发中的大多数问题会在此处出现。如果没有记错的话，我在这里遇到了16个内核错误。当数据到达安装此模块的机器时，watch_in()将会检查每一个 数据包看他是否是一个神秘的数据包。如果数据包没有满足被判定为神秘数据包的条件的话，watch_in()会简单的返回一个NF_ACCEPT来忽略这 个数据包。注意，神秘数据包的判定标准就是这个数据包有足够的空间能够容纳IP地址，用户名和密码这些字符串。这样做是为了使得数据的回复更容易些。可能 需要申请一个新的sk_buff结构体。但是要保证所有的数据域都正确却是件不容易的事情，所以你必须想办法确保这些域的键值正确无误。因此，我们在此并 不创建一个新的结构体，而是直接修改请求数据包的结构，将其作为一个返回数据包。为了能正确返回，需要做几个修改。首先，IP地址进行交换，结构体 (sk_buff)中的数据包类型这个域的值要改为“PACKET_OUTGOING”，这个在linux/if_packet.h中定义了。第二步要确 保每个链路层信息已经被包含在其中。我们接收到数据包的数据域就是链路层头信息后面的指向sk_buff结构体的指针，并且指向数据包中数据开头的指针传 递了数据域。所以，对于需要链路层头信息的接口(以太网卡，回环设备和点对点设备的原始套结字)而言，我们的数据域指向mac.ethernet或者 mac.raw结构。你可以通过检测sb->dev->type的值(sb是指向sk_buff结构体的指针)的值来判断这个数据包进入了什 么类型的接口。你可以在linux/ip_arp.h中找到这些有效的值。最有用的都在表三列了出来。 
+
+表三.常见接口（网卡）类型 
+1. 类型码        接口类型 
+2. ARPHRD_ETHER        以太网卡 
+3. ARPHRD_LOOPBACK        回环设备 
+4. ARPHRD_PPP        点对点设备 
+复制代码
+
+
+要 做的最后一件事就是把我们要发送的数据包拷贝到返回的消息里面去，然后就该发送数据包了。函数dev_queue_xmit()使用一个指向 sk_buff结构体的指针作为唯一的参数，在发送明显失败时返回一个负的错误码（一个负值）。这里“明显”的失败指什么呢？这样的，如果你给这个函数一 个构造的坏的套接字缓冲，你并不会得到一个明显的失败。当出现内核错误或者内核栈溢出时就产生了一个明显的失败。这下知道错误怎样被划分为两类了吧？最后 watch_in()返回一个NF_STOLEN告诉Netfilter让它忘记曾经看几过这个数据包。在调用dev_queue_xmit()时不要返 回NF_DROP!如果你这样做了，你很快会得到一个肮脏的内核错误。因为dev_queue_xmit()会释放掉传递进去的套接字缓冲区，而 Netfilter却会尝试去对已经释放掉的数据包做相同的事情。好了，代码的讨论已经足够了，现在是看代码的时候了。 
+5.2.1 nsniffer 的代码 
+代码超过发贴上限，见附件 
+5.2.2 getpass.c 代码 
+代码超过发贴上限，见附件 
+
+第六章  在Libpcap中隐藏网络通讯 
+
+6.1 SOCK_PACKET, SOCK_RAW 和Libpcap 
+
+系统管理员经常用到的一些软件可“数据包嗅探器”这个标题进行分类。最普通的用于一般目的的数据包嗅探器有 
+Tcpdump(1) 和Ethreal(1)。这两个应用都是利用了libpcap这个库来获取原始套结字的数据包。网络入侵检测系统(NetWork Intrusion Detection System NIDS)也利用了libpcap这个库。SNORT也需要libpcap, Libnids----一个提供IP重组和TCP流跟踪的NIDS开发库(参见参考文献[2])，也是如此。 
+在 一台Linux系统上，libpcap利用SOCK_PACKET接口。Packet套结字是一种能够在链路层接收和发送数据包的特殊套结字。关于 packet套结字和它的用途可以说一大堆东西，但是本文是从它们当中隐藏而不是讲述如何利用它们的。感兴趣的读者可以从packet(7)的man手册 中了解到更详细的信息。在此处。我们只需要知道packet套结字能够被libpcap用来从机器上的原始套结字中获取进入的和发送的数据。 
+当 内核的网络堆栈收到一个数据包时，要对其进行一定的校验以便确定是否有packet套结字对它感兴趣。如果有的话，这个数据包就被分发给对它感兴趣的套结 字。如果没有的话，这个数据包继续流向TCP层，UDP层，或者其它的真正目的地。对于SOCKET_RAW型的套结字也是这样的情形。 SOCKET_RAW非常类似于SOCKET_PACKET型的套结字，区别就在于SOCKET_RAW不提供链路层的头信息。我在附录[3]中的 SYNalert就是SOCKET_RAW利用的一个例子。 
+现 在你应该知道Linux系统上的数据包嗅探软件都是利用libpcap库了吧。Libpcap在Linux上利用PACKET_SOCKET接口从链路层 获取原始套结字数据包。原始套结字可以在用户空间被用来从IP头中获取所有的数据包。下一段将会讲述一个Linux内核模块（LKM）怎样从数据包中或者 SOCKET_RAW套结字接口中隐藏一个网络传输。 
+
+6.2 给狼披上羊皮 
+(这个译法借鉴于参考译文) 
+
+当 一个数据包被接收到并发送给一个packet套结字时，packet_rcv()函数会被调用。可以在net/packet/af_packet.c中找 到这个函数的源代码。packet_rcv()负责使数据通过所有可能应用于数据目的地的Netfilter，最终将数据投递到用户空间。为了从 PACKET中隐藏数据包，我们需要设法让packet_rcv()对于一些特定的数据包一点也不调用。我们怎样实现这个？当然是优秀的ol式的函数劫持 了。 
+函 数劫持的基本操作是：如果我们知道一个内核函数，甚至是那些没有被导出的函数的入口地址，我们可以在实际的代码运行前将这个函数重定位到其他的位置。为了 达到这样的目的，我们首先要从这个函数的开始，保存其原来的指令字节，然后将它们换成跳转到我们的代码处执行的绝对跳转指令。例如以i386汇编语言实现 该操作如下： 
+1. movl  (address of our function),  %eax 
+2.         jmp   *eax 
+复制代码
+
+这些指令产生的16进制代码如下(假设函数地址为0)： 
+1. 0xb8 0x00 0x00 0x00 0x00 
+2.     0xff 0xe0 
+复制代码
+
+如 果我们在Linux核心模块的初始化时将上例中的函数地址替换为我们的钩子函数的地址，就可以使我们的钩子函数先运行。当我们想运行原来的函数时，只需要 在开始时恢复函数原来的指令，调用该函数并且替换我们的劫持代码。简单而有效。Silvio Cesare 不久前写过一篇文章，讲述如何实现内核函数劫持，参见参考文献[4]。 
+要 从packet套接字隐藏数据包，我们首先要写一个钩子函数，用来检查这个数据包是否满足被隐藏的标准。如果满足，钩子函数简单的向它的调用者返回一个 0，这样packet_rcv()函数也就不会被调用。如果packet_rcv()函数不被调用，那么这个数据包就不会递交给用户空间的packet套 接字。注意，只是对于"packet"套接字来说，该数据包被丢弃了。如果我们要过滤送到packet套接字的FTP数据包，那么FTP服务器的TCP套 接字仍然能收到这些数据包。我们所做的一切只是使运行在本机上的嗅探软件无法看到这些数据包。FTP服务器仍然能够处理和记录连接。 
+     
+    理论上大致就这么多了，关于原始套接字的用法同理可得。不同的是我们需要钩子的是raw_rcv()函数（在net/ipv4/raw.c中可以找到）。 下一节将给出并讨论一个Linux核心模块的示例代码，该代码劫持packet_rcv()函数和raw_rcv()函数，隐藏任何来自或去往指定的IP 地址的数据包。 
+第七章  结束语 
+希 望到现在为止，你对于什么是Netfilter，怎样使用Netfilter，可以对Netfilter做些什么已经有了一个基本的了解。你应该也具有了 在本地机器上将一些特定的网络传输从运行在这些机器上的嗅探型软件中隐藏的知识了。如果你想要关于这方面的压缩包的话，可以直接给我发送E-mail邮 件。我会为你做的任何修改，注释和建议而感激。现在，我就把这些有趣的东西留给你，你可以自由发挥自己的想象力。 
+
+附录A 轻量级防火墙 
+A.1 纵览 
+轻量级防火墙(Light weight fire wall ,LWFW)是一个简单的内核模块，它演示了第四章介绍的基本的数据包过滤技术。LWFW并通过系统调用ioctl提供了一个控制接口。 
+由 于LWFW已经有了足够多的文档，所以我在此只就它怎么工作进行简单的概述。当LWFW模块被安装时，第一个任务就是尝试去注册一个控制设备。注意，在针 对于LWFW的ioctl接口能够使用之前，需要在/dev目录下建立一个字符设备文件，如果这个控制设备注册成功的话，“in use”标识符将被清空，为NF_IP_PRE_ROUTE注册的钩子函数也就注册上了。clean_up函数做一些与此过程相反的事情。 
+LWFW提供了三个丢弃数据包的判定条件，它们按照处理的顺序依次是： 
+-----源接口(网卡名，如“eth0”，“eth0:1”等) 
+------源IP地址(如“10.0.1.4”，“192.168.1.1”等) 
+------目的TCP端口号（如ssh常用的22，FTP常用的19） 
+这 些规则的具体设定是通过ioctl接口来实现的。当一个数据包到来时，LWFW会根据设定好的规则对这些数据包进行检测。如果某个数据包符合其中的任何一 个规则，那么钩子函数将返回一个NF_DROP结果,从而Netfilter就会默默地丢弃这个数据包。负责的话，钩子函数会返回一个NF_ACCEPT 结果，这个数据包就会继续它的旅途。 
+最 后一个需要提到的就是LWFW的统计记录。任何一个数据包到达钩子函数时，只要LWFW是活跃的，那么看到的数据包总数目将会增加。单个的规则校验函数负 责增加由于符合此项规则而丢弃的数据包数目。需要注意的就是，当某个规则的内容变化时，这个规则对应的丢弃数据包总数也会被清零。Lwfwstats函数 利用IOCTL的LWFW_GET_STATS命令获取statistics结构体的一份拷贝值，并显示它的内容。 
+
+A.2 源代码 lwfw.c 
+见附件 
+A.3 lwfw.h，Makefile 
+见附件 
+A.4 译者添加的测试程序 
+下面是译者自己在学习时写的一个对LWFW的过滤规则进行设置和改动的例子，你也可以对此段代码进行修改，当模块成功加载之后，建立一个字符设备文件，然后这个程序就能运行了。 
+1. /* 
+2. Name: test.c 
+3. Author: duanjigang<duanjigang1983@gmail.com> 
+4. Date: 2006-5-15 
+5. */ 
+6. #include<sys/types.h> 
+7. #include<unistd.h> 
+8. #include<fcntl.h> 
+9. #include<linux/rtc.h> 
+10. #include<linux/ioctl.h> 
+11. #include "lwfw.h" 
+12. main() 
+13. { 
+14.         int fd; 
+15.         int i; 
+16.         struct lwfw_stats data; 
+17.         int retval; 
+18.         char msg[128]; 
+19.         /*来自这个IP地址的数据将被丢弃*/ 
+20. char * deny_ip = "192.168.1.105"; 
+21.         /*这个接口发出的数据将被丢弃，无法外流*/ 
+22. char *ifcfg = "eth0"; 
+23.         /*要禁止的TCP目的端口22， ssh的默认端口*/ 
+24. unsigned char *  port = "\x00\x16"; 
+25.         /*打开设备文件*/ 
+26. fd = open(LWFW_NAME, O_RDONLY); 
+27.         if(fd == -1) 
+28.            { 
+29.           perror("open fail!"); 
+30.           exit(-1); 
+31.         } 
+32.         /*激活LWFW，设置标志位*/ 
+33. if( ioctl(fd,LWFW_ACTIVATE,0) == -1 ) 
+34.         { 
+35.              perror("ioctl LWFW_ACTIVATE fail!\n"); 
+36.              exit(-1); 
+37.         } 
+38.      /*设置禁止IP*/    
+39. if( ioctl(fd, LWFW_DENY_IP, inet_addr(deny_ip)) == -1) 
+40.          { 
+41.             printf("ioctl LWFW_DENY_IP fail\n");  
+42.             exit(-1);  
+43.          } 
+44.      /*设置禁止端口*/    
+45. if(ioctl(fd, LWFW_DENY_PORT, *(unsigned short *)port) == -1) 
+46.          { 
+47.            printf("ioctl LWFW_DENY_PORT fail!\n"); 
+48.            exit(-1); 
+49.          } 
+50.          /*获取数据，这应该是一段时间之后的事，此处直接获取，不妥*/ 
+51.         if( ioctl(fd, LWFW_GET_STATS,*(unsigned long*)&data) == -1) 
+52.          { 
+53.             printf("iotcl LWFW_GET_STATS fail!\n"); 
+54.             exit(-1);  
+55.          } 
+56.         /* 
+57.         禁用这个接口 
+58.        if(ioctl(fd, LWFW_DENY_IF, (unsigned*)ifcfg) == -1) 
+59.          { 
+60.                printf("ioctl LWFW_DENY_IF fail!\n"); 
+61.                exit(-1); 
+62.          } 
+63.          */ 
+64.          printf("ip dropped : %d\n", data.ip_dropped); 
+65.          printf("if dropped : %d\n", data.if_dropped); 
+66.          printf("tcp dropped : %d\n", data.tcp_dropped); 
+67.          printf("total dropped : %d\n", data.total_dropped); 
+68.          printf("total seen: %d\n", data.total_seen); 
+69.          close(fd); 
+70. } 
+复制代码
+
+附录B  第六部分的代码 
+这 里是一个简单的模块，在这个模块中将对packet_rcv()函数和raw_rcv()函数进行替换，从而隐藏到达或者离开我们指定所IP地址的数据 包。默认的IP是“127.0.0.1”，但是，可以通过修改#define IP 来改动这个值。同样提供了一个bash的脚本，负责从Sytem.map文件中获取所需函数的地址，并且负责模块的插入，在插入模块时，以所需的格式将这 些函数的地址传递给内核。这个加载脚本是grem写的。原来是为我的mod-off项目而写，经过简单的修改就能用于这里的模块，再次感谢grem。 
+这 里给出的模块只是原理性的代码，没有任何模块隐藏的方法。有很重要的一点需要记住，尽管这个模块能够从运行于同一台机子上的嗅探器中隐藏指定的传输，但 是，位于同一个网段上的其他机子上的嗅探器仍然能够看到这些数据包。看了这个模块，精干的读者很快就能设计一些Netfilter钩子函数来阻断任何一种 想要阻断的数据包。我就利用本文中提到的技术成功地在其它内核模块项目中实现了对控制和信息获取数据包的隐藏。 
+（此处代码见附件） 
+
+[参考文献]: 
+[1]  The tcpdump group 
+      http://www.tcpdump.org 
+[2]  The Packet Factory 
+      http://www.packetfactory.net 
+[3]  My network tools page - 
+      http://uqconnect.net/~zzoklan/software/#net_tools 
+[4]  Silvio Cesare's Kernel Function Hijacking article 
+      http://vx.netlux.org/lib/vsc08.html 
+[5]  Man pages for: 
+    - raw (7) 
+    - packet (7) 
+    - tcpdump (1) 
+[6]  Linux kernel source files. In particular: 
+    - net/packet/af_packet.c     (for  packet_rcv()) 
+    - net/ipv4/raw.c             (for  raw_rcv()) 
+    - net/core/dev.c 
+    - net/ipv4/netfilter/* 
+[7] Harald Welte's Journey of a packet through the Linux 2.4 network 
+     stack 
+     http://gnumonks.org/ftp/pub/doc/packet-journey-2.4.html 
+[8] The Netfilter documentation page 
+     http://www.netfilter.org/documentation 
+[9] Phrack 55 - File 12 - 
+     http://www.phrack.org/show.php?p=55&a=12 
+[A] Linux Device Drivers 2nd Ed. by Alessandro Rubini et al. 
+[B] Inside the Linux Packet Filter. A Linux Journal article 
+     http://www.linuxjournal.com/article.php?sid=4852 
+

@@ -1,0 +1,471 @@
+uboot命令
+2013-09-02 13:55 1322人阅读 评论(0) 收藏 举报
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+
+#define CONFIG_BOOTCOMMAND    "nboot 0x30400000 0 0x60000\;bootm"
+
+其中nboot是uboot指令－－将nand flash中的内容加载到sdram中，0x30400000是拷到的sdram的地址，0是nand flash设备号，0x60000是内核在nand flash的地址。在通过bootm从0x30400000启动内核。
+
+U-boot的环境变量值得注意的有两个:bootcmd 和bootargs
+
+
+
+u-bootcmd
+    前面有说过bootcmd是自动启动时默认执行的一些命令，因此你可以在当前环境中定义各种不同配置，不同环境的参数设置，然后设置bootcmd为你经常使用的那种参数.
+
+         bootcmd=mmcinit;fatload mmc 0:1 80000000 uImage;bootm 80000000
+
+    需要注意的是对分号的处理.在uboot中设置该参数时，需要在分号前加上"/".
+
+         setenv bootcmd mmcinit/;fatload mmc 0:1 80000000 uImage/;bootm 80000000
+
+
+u-bootargs
+      bootargs是环境变量中的重中之重，甚至可以说整个环境变量都是围绕着bootargs来设置的.bootargs的种类非常非常的多，我们平常只是使用了几种而已，感兴趣的可以看看这篇文章说的很全：http://blog.chinaunix.net/u2/79570/showart_1675071.html.
+
+      bootargs非常的灵活，内核和文件系统的不同搭配就会有不同的设置方法，甚至你也可以不设置bootargs,而直接将其写到内核中去(在配置内核的选项中可以进行这样的设置)，正是这些原因导致了bootargs使用上的困难.
+    下面介绍一下bootargs常用参数，bootargs的种类非常的多，而且随着kernel的发展会出现一些新的参数，使得设置会更加灵活多样.
+
+A. root 
+    用来指定rootfs的位置， 常见的情况有: 
+       root=/dev/ram rw   
+       root=/dev/ram0 rw
+    请注意上面的这两种设置情况是通用的，我做过测试甚至root=/dev/ram1 rw和root=/dev/ram2 rw也是可以的，网上有人说在某些情况下是不通用的，即必须设置成ram或者ram0，但是目前还没有遇到，还需要进一步确认，遇到不行的时候可以逐一尝试。
+
+       root=/dev/mtdx rw
+       root=/dev/mtdblockx rw
+       root=/dev/mtdblock/x rw
+       root=31:0x
+     上面的这几个在一定情况下是通用的，当然这要看你当前的系统是否支持，不过mtd是字符设备，而mtdblock是块设备，有时候你的挨个的试到底当前的系统支持上面那种情况下，不过root=/dev/mtdblockx rw比较通用。此外，如果直接指定设备名可以的话，那么使用此设备的设备号也是可以的.
+       root=/dev/nfs
+     在文件系统为基于nfs的文件系统的时候使用。当然指定root=/dev/nfs之后，还需要指定nfsroot=serverip:nfs_dir，即指明文件系统存在那个主机的那个目录下面.
+
+B. rootfstype 
+      这个选项需要跟root一起配合使用，一般如果根文件系统是ext2的话，有没有这个选项是无所谓的，但是如果是jffs2,squashfs等文件系统的话，就需要rootfstype指明文件系统的类型，不然会无法挂载根分区.
+
+
+C. console 
+      console=tty  使用虚拟串口终端设备 .
+      console=ttyS[,options] 使用特定的串口，options可以是这样的形式bbbbpnx，这里bbbb是指串口的波特率，p是奇偶位，n是指的bits.
+console=ttySAC[,options] 同上面.
+
+      看你当前的环境，有时用ttyS，有时用ttySAC，网上有人说，这是跟内核的版本有关，2.4用ttyS，2.6用ttySAC，但实际情况是官方文档中也是使用ttyS，所以应该是跟内核版本没有关联的.可以查看Documentation/serial-console.txt找到相关描述.
+
+D. mem
+       mem=xxM 指定内存的大小，不是必须的
+
+E. ramdisk_size
+       ramdisk=xxxxx           不推荐   
+       ramdisk_size=xxxxx    推荐
+     上面这两个都可以告诉ramdisk 驱动，创建的ramdisk的size，默认情况下是4m(s390默认8M)，你可以查看Documentation/ramdisk.txt找到相关的描述，不过ramdisk=xxxxx在新版的内核都已经没有提了，不推荐使用.
+
+F. initrd, noinitrd
+      当你没有使用ramdisk启动系统的时候，你需要使用noinitrd这个参数，但是如果使用了的话，就需要指定initrd=r_addr,size, r_addr表示initrd在内存中的位置，size表示initrd的大小.
+
+G. init
+      init指定的是内核启起来后，进入系统中运行的第一个脚本，一般init=/linuxrc, 或者init=/etc/preinit，preinit的内容一般是创建console,null设备节点，运行init程序，挂载一些文件系统等等操作。请注意，很多初学者以为init=/linuxrc是固定写法，其实不然，/linuxrc指的是/目录下面的linuxrc脚本，一般是一个连接罢了.
+
+H. mtdparts
+      mtdparts=fc000000.nor_flash:1920k(linux),128k(fdt),20M(ramdisk),4M(jffs2),38272k(user),256k(env),384k(uboot)
+      要想这个参数起作用，内核中的mtd驱动必须要支持，即内核配置时需要选上Device Drivers  ---> Memory Technology Device (MTD) support  ---> Command line partition table parsing
+
+mtdparts的格式如下：
+    mtdparts=[;
+        := :[,]
+        := [@offset][][ro]
+        := unique id used in mapping driver/device
+        := standard linux memsize OR "-" to denote all remaining space
+        := (NAME)
+因此你在使用的时候需要按照下面的格式来设置：
+        mtdparts=mtd-id:@(),@()
+这里面有几个必须要注意的：
+a.  mtd-id 必须要跟你当前平台的flash的mtd-id一致，不然整个mtdparts会失效
+b.  size在设置的时候可以为实际的size(xxM,xxk,xx)，也可以为'-'这表示剩余的所有空间.
+举例：
+    假设flash 的mtd-id是sa1100，那么你可以使用下面的方式来设置：
+          mtdparts=sa1100:-     →  只有一个分区
+          mtdparts=sa1100:256k(ARMboot)ro,-(root)  →  有两个分区
+     可以查看drivers/mtd/cmdlinepart.c中的注释找到相关描述。
+
+I. ip
+      指定系统启动之后网卡的ip地址，如果你使用基于nfs的文件系统，那么必须要有这个参数，其他的情况下就看你自己的喜好了。设置ip有两种方法：
+          ip = ip addr
+          ip=ip addr:server ip addr:gateway:netmask::which netcard:off
+      这两种方法可以用，不过很明显第二种要详细很多，请注意第二种中which netcard 是指开发板上的网卡，而不是主机上的网卡。
+
+常见组合
+1). 假设文件系统是ramdisk，且直接就在内存中，bootargs的设置应该如下：
+setenv bootargs ‘initrd=0x32000000,0xa00000 root=/dev/ram0 console=ttySAC0 mem=64M init=/linuxrc’
+
+2). 假设文件系统是ramdisk，且在flash中，bootargs的设置应该如下：
+setenv bootargs ‘mem=32M console=ttyS0,115200 root=/dev/ram rw init=/linuxrc’
+注意这种情况下你应该要在bootm命令中指定ramdisk在flash中的地址，如bootm kernel_addr ramdisk_addr (fdt_addr)
+
+3). 假设文件系统是jffs2类型的，且在flash中，bootargs的设置应该如下
+setenv bootargs ‘mem=32M console=ttyS0,115200 noinitrd root=/dev/mtdblock2 rw rootfstype=jffs2 init=/linuxrc’
+
+4). 假设文件系统是基于nfs的，bootargs的设置应该如下
+setenv bootargs ‘noinitrd mem=64M console=ttySAC0 root=/dev/nfs nfsroot=192.168.0.3:/nfs ip=192.168.0.5:192.168.0.3:192.168.0.3:255.255.255.0::eth0:off’
+或者
+setenv bootargs ‘noinitrd mem=64M console=ttySAC0 root=/dev/nfs nfsroot=192.168.0.3:/nfs ip=192.168.0.5’
+
+      上面就是我们经常使用的几种bootargs的组合，老实说，bootargs非常非常的灵活，所以设置的方法有很多中形式，具体的还应该根据你的平台具体的情况来设置.
+
+
+Bootargs参数解析
+
+mournjust
+
+因为该文章不是讲内核的C代码启动过程，所以并没有从start_kernel函数开始，首先从setup_arch 函数(/arch/unicore-linux/kernel/setup.c)函数开始，setup_arch是start_kernel内调的一个子函数：
+
+(A)在uboot中已经相应的查找了machine类型，这儿仍然是调用
+
+setup_machine函数获得machine类型。
+
+       init_mm.start_code = (unsigned long)_text;
+
+       init_mm.end_code   = (unsigned long) _etext;
+
+       init_mm.end_data   = (unsigned long) _edata;
+
+       init_mm.brk      = (unsigned long) _end;
+
+这儿的_text等等是在编译的时候生成的，我们可以通过system.map来查看相应的值。注意此时这些变量存放的是虚拟地址。
+
+(B)内核不像用户空间，每一个用户进程都有独立的用户空间，但是内核空间是共享，这儿为内核建立mm_struct结构体，也就是init_mm。这个全局变量在内核代码中被用的很多。
+
+(C)memcpy(boot_command_line,from, COMMAND_LINE_SIZE);
+
+将bootargs参数表从from地址拷贝到boot_command_line地址上，然后调用parse_cmdline进行参数解析。
+
+注意：
+
+staticchar default_command_line[COMMAND_LINE_SIZE] __initdata = CONFIG_CMDLINE;
+
+char*from = default_command_line;
+
+其中CONFIG_CMDLINE可以在.config的隐藏文件中找到相应的值。
+
+(D)parse_cmdline用于解析参数，这时候处理的参数只有initrd 和mem两种。
+
+这个函数将从__early_begin到__early_end结束的所有的early_params参数与我们的bootargs参数进行对比，看bootargs中是否存在这样的参数。
+
+从vmlinux.lds的链接脚本中可以看出：
+
+  __early_begin = .;
+
+   *(.early_param.init)
+
+  __early_end = .;
+
+这段区域中存放的是early_param_init段。
+
+在setup.h文件中定义了相应的初始化函数：
+
+#define__early_param(name,fn)                               \
+
+staticstruct early_params __early_##fn __used                  \
+
+__attribute__((__section__(".early_param.init")))= { name, fn }
+
+通过source insight我们可以查到两个比较常见的参数的定义。
+
+__early_param("initrd=",early_initrd);(init.c)
+
+__early_param("mem=",early_mem);(setup.c)
+
+这些是保持在early_param.init段中。后面虽然还会继续解析参数，但是是到.init.setup段中查找的。所以bootargs中的参数是分为几个阶段分批处理的。
+
+(E)early_mem
+
+该函数用于处理bootargs中的"mem=size@start".参数
+
+如果没有定义mem起始地址, 使用PHYS_OFFSET ，这个参数是由具体的开发板定义的，在611中，在arch\unicore\mach-sep0611\include\mach\memory.h中定义的。
+
+#definePHYS_OFFSET       UL(0x40000000)
+
+通过unicore_add_memory(start, size);函数将一段连续的内存空间添加到struct meminfo meminfo中去。对于ramdisk的处理也比较简单，在此不详解了。
+
+(F)paging_init(\arch\unicore-linux\mm\mmu.c）这个函数比较大，下面分布介绍(关于内存的启动部分，推荐去看一个网友的博客http://blog.chinaunix.net/space.php?uid=20564848&do=blog&id=72836)。
+
+(1)sanity_check_meminfo用于检测内存的虚拟地址（线性映射）是否超过了VMALLOC_MIN的地址（如果内存太大，可能会这样）。如果内存太大的话，那么就重新计算内存的可用大小。显然这时候一部分内存就不可以使用了或者一分为二（一部分给系统正常使用，一部分划给highmem）。内核为VMALLOC和initrd保留了128M的空间，那么内核可使用的最大空间只有1G-128M=896M。
+
+(2)prepare_page_table
+
+下面是关于该函数用到的一些宏定义。
+
+#defineVMALLOC_MIN     (void *)(VMALLOC_END -vmalloc_reserve)
+
+staticunsigned long __initdata vmalloc_reserve = SZ_128M;
+
+#defineVMALLOC_END       (0xff000000)
+
+#definepmd_clear(pmdp)                   \
+
+       do {                      \
+
+              set_pmd(pmdp, __pmd(0));\
+
+              clean_pmd_entry(pmdp);      \
+
+       } while (0)
+
+#defineset_pmd(pmdpd,pmdval)         \
+
+       do {                      \
+
+              *(pmdpd) = pmdval;      \
+
+       } while (0)
+
+/* tofind an entry in a kernel page-table-directory */
+
+#definepgd_offset_k(addr)   pgd_offset(&init_mm,addr)
+
+#defineMODULES_VADDR              (PAGE_OFFSET -16*1024*1024)
+
+注意该函数中这样一段代码：
+
+       for (addr =__phys_to_virt(bank_phys_end(&meminfo.bank[0]));
+
+           addr < VMALLOC_END; addr += PGDIR_SIZE)
+
+              pmd_clear(pmd_off_k(addr));
+
+这段代码将第一个bank的结束地址转换成虚拟地址，将从这个虚拟地址开始到VMALLOC_END的这段虚拟地址区域在页表中清除。
+
+这时候，我们的内核image镜像已经被建立的临时页表映射到了0xC0000000开始的虚拟地址上。
+
+那么prepare_page_table函数的作用就是将除了内核镜像所在位置、主内存所在虚拟地址的其余部分全部清除掉。（在后面会调用map_io为设备建立静态映射）所以这个函数的作用就如名字所示，为建立页表做准备。
+
+(3)bootmem_init（为主内存创建映射）
+
+Initrd_node  = check_initrd(mi);查询系统中有没有内存bank，看看那个bank可以容纳initrd，这里涉及到两个全局变量：phys_initrd_start和phys_initrd_size(这两个变量是在early_initrd函数中初始化的)。如果找不到包含initrd的bank，就把上述两个变量清零。
+
+bootmem_init_node函数：首先计算出每一个bank需要被映射的页数，调用bootmem_init_node->map_memory_bank->create_mapping来为主内存建立映射(注意这儿的create_mapping函数，在后面调用map_io的时候也是调用该函数为设备建立静态映射的).然后将所以的页面在位图进行初始化（首先这个位图是从内核结束的地址开始的，注意find_bootmap_pfn函数中一个变量为_end,使之内核的结束地址，将位图本身占用的空间保留），每一个BANK都有相应的位图，但是对于不全是空闲的内存bank（保持了内核镜像等等），不能简单的将位图设置在该bank的首部，因为该位图可能会将 内核镜像数据覆盖或者部分覆盖掉，所以为位图寻找空间也是一个繁琐的过程。
+
+static inline void map_memory_bank(struct membank *bank)
+
+{
+
+       struct map_desc map;
+
+       map.pfn = bank_pfn_start(bank);
+
+       map.virtual =__phys_to_virt(bank_phys_start(bank));
+
+       map.length =bank_phys_size(bank);
+
+       map.type = MT_MEMORY;
+
+       create_mapping(&map);
+
+}
+
+#define __phys_to_virt(x)     ((x)- PHYS_OFFSET + PAGE_OFFSET)
+
+#define PHYS_OFFSET       UL(0x40000000)
+
+#define PAGE_OFFSET              UL(CONFIG_PAGE_OFFSET)
+
+#define CONFIG_PAGE_OFFSET 0xC0000000
+
+将从0x40000000开始的128M的内存映射到0xC0000000。（但是我觉得这些内存中没有被使用的部分还应该释放掉，因为这些物理内存还需要被用户进程所使用）。
+
+虽然我们现在为主内存建立映射，但是主内存中一部分已经被内核使用了，那么现在要做的就是将这些已经被占用了内存标记一下。这就是reserve_node_zero函数做的事情，这儿主要是为内核镜像的代码段和数据段以及内核页表标记一下，表示这些内存已经被使用了。另外如果使用ramdisk的情况，还需要调用bootmem_reserve_initrd为ramdisk保留空间。
+
+bootmem_free_node用于将内存标记为未使用，关于这一段CSDN上有一篇博文（http://blog.csdn.net/huyugv_830913/archive/2010/09/15/5886879.aspx），从下面这张图上可以 清楚看出主内存的使用情况，首先主内存被映射到了0XC0000000的虚拟地址上去了。内核要为所有需要管理的页面建立struct page的结构，这一部分也需要预留空间。
+
+关于上面一个问题的疑问，我终于知道了，在内核的mem_init函数中会有解答。注意上面的位图，在mem_init（start_kernel->     mm_init()->mem_init-->free_all_bootmem_node）(arch/unicore/mm/init.c)中会调用free_all_bootmem将低端内存位图中为0的page全部释放掉。上面的红字部分是我曾经的一段误解，其实这些空间并没有被内核页表释放掉，而是仍然在内核的页表中存在映射，但是需要注意的一点是，在伙伴系统起来之后，所有的内存（不管是用户空间还是内核空间）都是被伙伴系统所管理的，即内存归谁是由伙伴系统说了算的，而不是页表。还有一点，用户进程有自己的页表，所以跟内核页表有没有释放毫无关系。其实我们可以在内核中不经映射就可以访问已经被用户进程映射了的物理内存（这一点及其重要，因为验证了我前面提到的在内核页表中空闲页框并没有被释放掉，使得在内核中可以共享一个用户进程的数据）。
+
+(4)devicemaps_init该函数用于为设备建立静态映射。
+
+devicemaps_init首先为中断向量建立映射。
+
+然后调用具体机器的map_io函数为机器的设备建立映射。比如在mm.c中会定义一个静态映射的数组staticstruct map_desc sep0611_io_desc[] __initdata。（这个数组定义在/arch/unicore/mach-sep0611/mm.c中）
+
+同时在该文件中定义了一个函数void __init sep0611_map_io(void)，这就是0611的map_io函数。
+
+关于0611的machine_desc结构体定义在/arch/unicore/mach-sep0611/mach_sep0611.c文件中：
+
+MACHINE_START(GFD0611,"SEP0611board")
+
+       .phys_io  =0xB1000000,
+
+       .io_pg_offst    = ((0x31000000) >> 18) & 0xfffc,
+
+       .boot_params  = 0x40000100,
+
+       //.fixup           =fixup_gfd4020,
+
+       .map_io          =sep0611_map_io,
+
+       .init_irq   =  sep0611_init_irq,
+
+       .init_machine  = sep0611_init,
+
+       .timer             =&sep0611_timer,
+
+MACHINE_END
+
+(5)kmap_init函数，由于在0611中没有定义高端内存，所以这个函数是空的。
+
+(6)我们知道为了适应于COW机制，内核中定义了一个empty_zero_page，即全部为0的一个页面，当我们读取一个共享页面的时候，读出的全部为0，就是读出的empty_zero_page中的内容，只有在写的时候才会COW。empty_zero_page这个页面一度被取消掉，因为内核维护者认为这个页面影响了cache的缓冲，影响了内核性能。但是后来又被使用进来了.
+
+(G)request_standard_resources该函数用于为一些设备建立resource结构。
+
+首先先修正内核的resource结构，因为内核也是占用地址空间，我们也认为它是一个设备。
+
+接着为meminfo中每一个bank建立resource结构。
+
+(H）build_all_zonelists（为内存管理建立zone结构）
+
+该函数用于建立内存的zone结构。这之前内存映射已经建立了。
+
+vm_total_pages用于描述总的内存的大小，但是该参数好像是有bootargs传进来的参数决定的。
+
+Ipage_alloc_init
+
+调用hotcpu_notifier来注册CPU的通知链。（热插拔？？）
+
+(10)从start_kernel中的一段代码开始：
+
+       printk(KERN_NOTICE "Kernel commandline: %s\n", boot_command_line);
+
+       parse_early_param();
+
+这段话就是我们的内核其中看到的一句话：
+
+Kernelcommand line: root=/dev/ram0 rw console=ttyS0,115200initrd=0x45000000,0x1400000 mem=128mb
+
+这段话保持在boot_command_line全局变量保持的一段地址上。
+
+parse_early_param->parse_early_options->parse_args
+
+注意parse_args的参数
+
+parse_args("earlyoptions", cmdline, NULL, 0, do_early_param);
+
+由于parse_one参数的num_params为0，所以对于每一个参数都是调用do_early_param函数。
+
+staticint __init do_early_param(char *param, char *val)
+
+{
+
+       struct obs_kernel_param *p;
+
+       for (p = __setup_start; p <__setup_end; p++) {
+
+              if ((p->early &&strcmp(param, p->str) == 0) ||
+
+                 (strcmp(param, "console") == 0 &&
+
+                   strcmp(p->str, "earlycon") ==0)
+
+              ) {
+
+                     if (p->setup_func(val)!= 0)
+
+                            printk(KERN_WARNING
+
+                                   "Malformed early option'%s'\n", param);
+
+              }
+
+       }
+
+       /* We accept everything at this stage. */
+
+       return 0;
+
+}
+
+其中do_early_param就是将param与__setup_start到__setup_end段中的参数进行比较，然后调用该参数相应的处理函数。
+
+在vmlinux.lds.h链接脚本的头文件中定义了：
+
+#defineINIT_SETUP(initsetup_align)                              \
+
+              . = ALIGN(initsetup_align);                       \
+
+              VMLINUX_SYMBOL(__setup_start) = .;                  \
+
+              *(.init.setup)                                      \
+
+              VMLINUX_SYMBOL(__setup_end) = .;
+
+init_setup是一个自定义的段，显然__setup_start是init_setup段的开始，而__setup_end是该段的结束地址。
+
+在include/linux/init.h头文件中有如下定义。
+
+#define__setup_param(str, unique_id, fn, early)                \
+
+       static const char__setup_str_##unique_id[] __initconst      \
+
+              __aligned(1) = str; \
+
+       static struct obs_kernel_param__setup_##unique_id   \
+
+              __used __section(.init.setup)                \
+
+              __attribute__((aligned((sizeof(long)))))       \
+
+              = { __setup_str_##unique_id, fn,early }
+
+ 
+
+#define__setup(str, fn)                              \
+
+       __setup_param(str, fn, fn, 0)
+
+该宏用于在init.setup段中定义一个param和相应的处理函数。
+
+在内核的android_kernel_back\init\Do_mounts.c文件中用这个宏定义了很多的参数及处理函数。如最常见的__setup("root=", root_dev_setup);
+
+(J)parse_args("Bootingkernel", static_command_line, __start___param,__stop___param -__start___param,&unknown_bootoption);
+
+在内核的链接脚本中有这样的一段用于定义__param段：
+
+       /* Built-in module parameters. */                       \
+
+       __param : AT(ADDR(__param) - LOAD_OFFSET){               \
+
+              VMLINUX_SYMBOL(__start___param) =.;                    \
+
+              *(__param)                                        \
+
+              VMLINUX_SYMBOL(__stop___param) =.;     
+
+__start___param和__stop___param分别是__param段得开始和结束。内核中一般使用core_param宏来定义这样的参数和处理函数。但是在嵌入式中，一般没有定义这样的参数。
+
+这样我们可以认为在嵌入式中，bootargs的参数一般分为两个阶段来解析，第一个是mem和initrd两个参数，因为这两个涉及到内存的使用。第二阶段在parse_early_param函数中解析剩余的参数。
+
+(K)pidhash_init
+
+建立pid hash table，为将来建立内核的init进程做准备。
+
+(L)vfs_caches_init_early
+
+了解过虚拟文件系统的会知道在VFS中有两个极其重要的结构体，即dentry和inode。在这儿vfs_caches_init_early函数为这两个建立hash table。
+
+(M)sort_main_extable();   
+
+异常处理调用函数表排序
+
+(11)  trap_init();见情景分析
+
+重新设置中断向量表
+
+(N)rcu_init()
+
+初始化RCU(Read-Copy Update),主要是一个per_cpu_rcu_tasklet
+
+(O)mm_init在上面讲bootmem_init函数的时候提到了mm_init中的mem_init函数关于将空闲的内存释放。
+
+page_cgroup_init_flatmem()，在0611中这是一个空函数，就不管了。
+
+mem_init,处理一些内存的事情。注意这儿的free_all_bootmem_core函数，将函数完成了从bank及位图形式的管理到伙伴系统管理的转化。
+
+(12)  sched_init
+
+(13)  preempt_disable

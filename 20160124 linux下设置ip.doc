@@ -1,0 +1,548 @@
+﻿Linux下编程设置IP，网关 
+标签： linux编程cmdsystemfilefp 
+2011-10-21 10:14 1483人阅读 评论(0) 收藏 举报 
+ 分类： 
+  
+作者同类文章X
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+1.拼凑成指令实现：
+[cpp] view plain copy
+print?
+1. #include <string.h>  
+2. #include <stdlib.h>  
+3.   
+4. int main(void)  
+5. {  
+6.     char IP[24] = "192.168.1.225";  
+7.     char Mask[24] = "255.255.0.0";  
+8.     char gateway[24] = "10.240.0.0";  
+9.     char cmd_IP_Mask[64] = {0};  
+10.     char cmd_GW[64] = {0};  
+11.     sprintf(cmd_IP_Mask, "ifconfig eth0 %s netmask %s", IP, Mask);  
+12.     sprintf(cmd_GW, "route add default gw %s netmask %s", gateway);  
+13.   
+14.     system(cmd_IP_Mask);  
+15.     system(cmd_GW);  
+16.   
+17.     return 0;  
+18. }  
+#include <string.h>
+#include <stdlib.h>
+
+int main(void)
+{
+        char IP[24] = "192.168.1.225";
+        char Mask[24] = "255.255.0.0";
+        char gateway[24] = "10.240.0.0";
+        char cmd_IP_Mask[64] = {0};
+        char cmd_GW[64] = {0};
+        sprintf(cmd_IP_Mask, "ifconfig eth0 %s netmask %s", IP, Mask);
+        sprintf(cmd_GW, "route add default gw %s netmask %s", gateway);
+
+        system(cmd_IP_Mask);
+        system(cmd_GW);
+
+        return 0;
+}
+2.从文件中获取IP地址，然后设置IP：
+[cpp] view plain copy
+print?
+1. #include <stdio.h>  
+2. #include <string.h>  
+3. #include <stdlib.h>  
+4.   
+5. #define FILE_NAME "ip.txt"  
+6. int main(void)  
+7. {  
+8.     FILE *fp;  
+9.     char IP[20];  
+10.     char Mask[20];  
+11.     char gateway[20];  
+12.     char cmd_IP_Set[64] = {0};  
+13.     char cmd_GW[64] = {0};  
+14.     if( (fp=fopen(FILE_NAME,"r"))==NULL )  
+15.   {  
+16.       printf("Open %s failed ! \n", FILE_NAME);  
+17.       exit(0);  
+18.   }  
+19.   fgets(IP, 20, fp);  
+20.   fgets(Mask, 20, fp);  
+21.   fgets(gateway, 20, fp);  
+22.     
+23.   printf("IP : %s ", IP);  
+24.   printf("Mask : %s ", Mask);  
+25.   printf("gateway : %s \n", gateway);  
+26.     
+27.   sprintf(cmd_IP_Set, "ifconfig eth0 %s", IP);  
+28.   system(cmd_IP_Set);  
+29.   sprintf(cmd_IP_Set, "ifconfig eth0 netmask %s", Mask);  
+30.   system(cmd_IP_Set);  
+31.     sprintf(cmd_IP_Set, "route add default gw %s", gateway);  
+32.     system(cmd_IP_Set);  
+33.   
+34. return 0;  
+35. }  
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define FILE_NAME "ip.txt"
+int main(void)
+{
+        FILE *fp;
+        char IP[20];
+        char Mask[20];
+        char gateway[20];
+        char cmd_IP_Set[64] = {0};
+        char cmd_GW[64] = {0};
+        if( (fp=fopen(FILE_NAME,"r"))==NULL )
+  {
+      printf("Open %s failed ! \n", FILE_NAME);
+      exit(0);
+  }
+  fgets(IP, 20, fp);
+  fgets(Mask, 20, fp);
+  fgets(gateway, 20, fp);
+  
+  printf("IP : %s ", IP);
+  printf("Mask : %s ", Mask);
+  printf("gateway : %s \n", gateway);
+  
+  sprintf(cmd_IP_Set, "ifconfig eth0 %s", IP);
+  system(cmd_IP_Set);
+  sprintf(cmd_IP_Set, "ifconfig eth0 netmask %s", Mask);
+  system(cmd_IP_Set);
+        sprintf(cmd_IP_Set, "route add default gw %s", gateway);
+        system(cmd_IP_Set);
+
+return 0;
+}
+
+2.从文件中获取IP地址，检测IP地址的合法性，然后设置IP：
+[cpp] view plain copy
+print?
+1. #include <stdio.h>  
+2. #include <string.h>  
+3. #include <stdlib.h>  
+4. #include <ctype.h>  
+5. #include <unistd.h>  
+6. #include <sys/types.h>  
+7. #include <sys/socket.h>  
+8. #include <netinet/in.h>  
+9. #include <arpa/inet.h>  
+10. #include <errno.h>  
+11.   
+12. #define FALSE 0  
+13. #define TRUE 1  
+14.   
+15. #define FILE_NAME "ip.txt"  
+16.   
+17. #if 1  
+18. int is_valid_ip_address(const char *addr)  
+19. {  
+20.     int num= 0;  
+21.     int i = 0, j = 0;  
+22.     int value;  
+23.     char buf[4] ;  
+24.     int count = 0;  
+25.     int k =0,m=0;  
+26.     char test_num[20] = {0};  
+27.   
+28.     while ( *(addr + i) )  
+29.     {  
+30.         if ( *(addr + i) == '.' )  
+31.         {  
+32.             ++count;  
+33.             if(((count == 3) && (strlen(addr + i)>6))  
+34.                 ||(count > 3))  
+35.             {  
+36.                 printf(" count = %d ******** %s  %d\n", count, (addr + i),strlen(addr + i));  
+37.                 return FALSE;  
+38.             }     
+39.         }   
+40.         ++i;  
+41.     }  
+42.   
+43.     i = j = value = count = 0;    
+44.     memset(buf, 0, sizeof(buf));  
+45.     while ( *(addr + i) )  
+46.     {  
+47.         ++num;  
+48.         //printf("^^^^^^^^^^^^^^^^^^^^^ %d \n",*buf);  
+49.         while ((*(addr + i) != '.') && (i< 15))  
+50.         {  
+51.                 //printf("i = %d ",i);  
+52.                 printf("num = %d   %x \n",num, atoi(addr + i));  
+53.   
+54.                 if(*(addr + i) == 0x0d)           // windows.  
+55.                 {  
+56.                     if(*(addr + i+1) == 0x0a)  
+57.                     {  
+58.                         printf("*************\n");  
+59.                         break;  
+60.                     }  
+61.                 }  
+62.   
+63.                 if(*(addr + i) == 0x0a)          // linux.  
+64.                 {  
+65.                     if(*(addr + i-1) != 0x0d)  
+66.                     {  
+67.                         printf("222*************\n");  
+68.                         //++i;  
+69.                         //continue;  
+70.                         break;  
+71.                     }  
+72.                 }                 
+73.                   
+74.                 /*if(num == 4) 
+75.                 { 
+76.                     sprintf(test_num,"%x", (addr + i)); 
+77.                     printf(">>>>>>> : %s \n" test_num); 
+78.                 }*/  
+79.                     //printf(" ******** %d  %s  %d\n", i, (addr + i),strlen(addr + i));  
+80.                 printf("@@@@@@@@@ :%s  \n",(addr + i));  
+81.             if (( ! isdigit(*(addr + i)) ) && (num != 4))  
+82.             {  
+83.                     printf("111111111\n");  
+84.                     //printf("  %s  %d\n", (addr + i),strlen(addr + i));  
+85.                     return FALSE;  
+86.                   
+87.             }  
+88.             *(buf + j) = *(addr + i);  
+89.             ++i;  
+90.             ++j;  
+91.         }  
+92.         *(buf + j) = '\0';  
+93.         //if(num == 4)  
+94.         ///{  
+95.             //printf("num = %d \n",num);  
+96.             //for(k=0;k<j;++k)  
+97.                 //printf("## %02x ",*buf);  
+98.         //}  
+99.         printf("\n^^^^^^^^^^^ %s  %d \n",buf,strlen(buf));  
+100.         value = atoi(buf);  
+101.   
+102.         if ( (value > 255) || (value < 0) )  
+103.         {  
+104.             printf("222222222\n");  
+105.             return FALSE;      
+106.         }  
+107.           
+108.         if ( *(addr + i) == '.' )  
+109.         {  
+110.             ++count;  
+111.             printf("pinggle come here : %d  \n", count);      
+112.             printf("i = %d \n",i);  
+113.             ++i;  
+114.             j = 0;  
+115.             memset(buf, 0, sizeof(buf));  
+116.             continue;  
+117.         }  
+118.         else  
+119.         {  
+120.             break;  
+121.         }  
+122.     }  
+123.   
+124.     printf("buf = %s  %d \n",buf, strlen(buf));  
+125.     //m = strlen(buf)-2;  
+126.     m = strlen(buf);  
+127.     for(k=0;k<m;++k)  
+128.     {  
+129.         printf("%c ", buf[k]);  
+130.         printf("  chech ! \n");  
+131.         if ( ! isdigit(buf[k]) )   
+132.         {  
+133.             printf("444: %d  \n",num);  
+134.             return FALSE;     
+135.         }  
+136.     }  
+137.     return TRUE;  
+138.   
+139. }  
+140. #endif  
+141.   
+142. #if 0  
+143. int is_valid_ip_address(const char *str)  
+144. {  
+145.     printf("%s >>>>>>>>> \n",str);  
+146. #if 1  
+147.     struct in_addr addr;  
+148.     int ret;  
+149.     volatile int local_errno;  
+150.   
+151.     errno = 0;  
+152.     ret = inet_pton(AF_INET, str, &addr);  
+153.     local_errno = errno;  
+154.     if (ret > 0)  
+155.         fprintf(stderr, "\"%s\" is a valid IPv4 address\n", str);  
+156.     else if (ret < 0)  
+157.         fprintf(stderr, "EAFNOSUPPORT: %s\n", strerror(local_errno));  
+158.     else   
+159.         fprintf(stderr, "\"%s\" is not a valid IPv4 address\n", str);  
+160.   
+161.     return ret;  
+162. #endif  
+163.   
+164. }  
+165. #endif  
+166.   
+167. int main(void)  
+168. {  
+169.     FILE *fp;  
+170.     char IP[20];  
+171.     char Mask[20];  
+172.     char gateway[20];  
+173.     char cmd_IP_Set[64] = {0};  
+174.     char cmd_Mask[64] = {0};  
+175.     char cmd_GW[64] = {0};  
+176.     if( (fp=fopen(FILE_NAME,"r"))==NULL )  
+177.   {  
+178.       printf("Open %s failed ! \n", FILE_NAME);  
+179.       exit(0);  
+180.   }  
+181.   fgets(IP, 20, fp);  
+182.   fgets(Mask, 20, fp);  
+183.   fgets(gateway, 20, fp);  
+184.     
+185.   //printf("check : %d \n",is_valid_ip_address(IP));  
+186.   if(is_valid_ip_address(IP))  
+187.   {  
+188.       printf("IP address is Valid ! \n");  
+189.       printf("IP : %s ", IP);  
+190.       printf("Mask : %s ", Mask);  
+191.       printf("gateway : %s \n", gateway);  
+192.   
+193.       sprintf(cmd_IP_Set, "ifconfig eth0 %s", IP);  
+194.       system(cmd_IP_Set);  
+195. //    printf("set ip return : %d \n",system(cmd_IP_Set));  
+196.       sprintf(cmd_IP_Set, "ifconfig eth0 netmask %s", Mask);  
+197.       system(cmd_IP_Set);  
+198. //    printf("set netmask return : %d \n",system(cmd_IP_Set));  
+199.       sprintf(cmd_GW, "route add default gw %s", gateway);  
+200.       system(cmd_GW);  
+201. //    printf("set wg is %d \n",system(cmd_GW));  
+202.       printf("Set IP address OK ! \n");  
+203.   }  
+204.   else  
+205.   {  
+206.     printf("Error : IP address is Invalid ! \n");  
+207.     printf("Set IP address Failed ! \n");  
+208.   }  
+209.   
+210. return 0;  
+211. }  
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <errno.h>
+
+#define FALSE 0
+#define TRUE 1
+
+#define FILE_NAME "ip.txt"
+
+#if 1
+int is_valid_ip_address(const char *addr)
+{
+    int num= 0;
+    int i = 0, j = 0;
+    int value;
+    char buf[4] ;
+    int count = 0;
+        int k =0,m=0;
+        char test_num[20] = {0};
+
+        while ( *(addr + i) )
+        {
+                if ( *(addr + i) == '.' )
+                {
+                        ++count;
+                        if(((count == 3) && (strlen(addr + i)>6))
+                                ||(count > 3))
+                        {
+                                printf(" count = %d ******** %s  %d\n", count, (addr + i),strlen(addr + i));
+                                return FALSE;
+                        }       
+                } 
+                ++i;
+        }
+
+        i = j = value = count = 0;      
+    memset(buf, 0, sizeof(buf));
+    while ( *(addr + i) )
+    {
+        ++num;
+                //printf("^^^^^^^^^^^^^^^^^^^^^ %d \n",*buf);
+        while ((*(addr + i) != '.') && (i< 15))
+        {
+                        //printf("i = %d ",i);
+                        printf("num = %d   %x \n",num, atoi(addr + i));
+
+                                if(*(addr + i) == 0x0d)           // windows.
+                                {
+                                        if(*(addr + i+1) == 0x0a)
+                                        {
+                                                printf("*************\n");
+                                                break;
+                                        }
+                                }
+
+                                if(*(addr + i) == 0x0a)          // linux.
+                                {
+                                        if(*(addr + i-1) != 0x0d)
+                                        {
+                                                printf("222*************\n");
+                                                //++i;
+                                                //continue;
+                                                break;
+                                        }
+                                }                               
+                                
+                                /*if(num == 4)
+                                {
+                                        sprintf(test_num,"%x", (addr + i));
+                                        printf(">>>>>>> : %s \n" test_num);
+                                }*/
+                                        //printf(" ******** %d  %s  %d\n", i, (addr + i),strlen(addr + i));
+                        printf("@@@@@@@@@ :%s  \n",(addr + i));
+            if (( ! isdigit(*(addr + i)) ) && (num != 4))
+            {
+                        printf("111111111\n");
+                                        //printf("  %s  %d\n", (addr + i),strlen(addr + i));
+                        return FALSE;
+                
+            }
+            *(buf + j) = *(addr + i);
+            ++i;
+            ++j;
+        }
+        *(buf + j) = '\0';
+                //if(num == 4)
+                ///{
+                        //printf("num = %d \n",num);
+                        //for(k=0;k<j;++k)
+                                //printf("## %02x ",*buf);
+                //}
+                printf("\n^^^^^^^^^^^ %s  %d \n",buf,strlen(buf));
+        value = atoi(buf);
+
+        if ( (value > 255) || (value < 0) )
+        {
+                printf("222222222\n");
+            return FALSE;    
+        }
+        
+        if ( *(addr + i) == '.' )
+        {
+                ++count;
+            printf("pinggle come here : %d  \n", count);        
+                        printf("i = %d \n",i);
+            ++i;
+            j = 0;
+            memset(buf, 0, sizeof(buf));
+            continue;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+        printf("buf = %s  %d \n",buf, strlen(buf));
+        //m = strlen(buf)-2;
+        m = strlen(buf);
+        for(k=0;k<m;++k)
+        {
+                printf("%c ", buf[k]);
+                printf("  chech ! \n");
+                if ( ! isdigit(buf[k]) ) 
+        {
+                printf("444: %d  \n",num);
+            return FALSE;       
+                }
+        }
+        return TRUE;
+
+}
+#endif
+
+#if 0
+int is_valid_ip_address(const char *str)
+{
+        printf("%s >>>>>>>>> \n",str);
+#if 1
+    struct in_addr addr;
+    int ret;
+    volatile int local_errno;
+
+    errno = 0;
+    ret = inet_pton(AF_INET, str, &addr);
+    local_errno = errno;
+    if (ret > 0)
+        fprintf(stderr, "\"%s\" is a valid IPv4 address\n", str);
+    else if (ret < 0)
+        fprintf(stderr, "EAFNOSUPPORT: %s\n", strerror(local_errno));
+    else 
+        fprintf(stderr, "\"%s\" is not a valid IPv4 address\n", str);
+
+    return ret;
+#endif
+
+}
+#endif
+
+int main(void)
+{
+        FILE *fp;
+        char IP[20];
+        char Mask[20];
+        char gateway[20];
+        char cmd_IP_Set[64] = {0};
+        char cmd_Mask[64] = {0};
+        char cmd_GW[64] = {0};
+        if( (fp=fopen(FILE_NAME,"r"))==NULL )
+  {
+      printf("Open %s failed ! \n", FILE_NAME);
+      exit(0);
+  }
+  fgets(IP, 20, fp);
+  fgets(Mask, 20, fp);
+  fgets(gateway, 20, fp);
+  
+  //printf("check : %d \n",is_valid_ip_address(IP));
+  if(is_valid_ip_address(IP))
+  {
+          printf("IP address is Valid ! \n");
+          printf("IP : %s ", IP);
+          printf("Mask : %s ", Mask);
+          printf("gateway : %s \n", gateway);
+
+          sprintf(cmd_IP_Set, "ifconfig eth0 %s", IP);
+          system(cmd_IP_Set);
+//        printf("set ip return : %d \n",system(cmd_IP_Set));
+          sprintf(cmd_IP_Set, "ifconfig eth0 netmask %s", Mask);
+          system(cmd_IP_Set);
+//        printf("set netmask return : %d \n",system(cmd_IP_Set));
+          sprintf(cmd_GW, "route add default gw %s", gateway);
+      system(cmd_GW);
+//        printf("set wg is %d \n",system(cmd_GW));
+          printf("Set IP address OK ! \n");
+  }
+  else
+  {
+        printf("Error : IP address is Invalid ! \n");
+        printf("Set IP address Failed ! \n");
+  }
+
+return 0;
+}
+
+说明：子网掩码和网关未做检查，当IP地址和网关不在同一网段时，IP设置正确，网关会设置失败。这个与子网掩码有关，但本程序还未实现此种情况的判断，望后来者可以补上。
+

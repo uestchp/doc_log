@@ -1,0 +1,102 @@
+﻿ 
+ubuntu Nodejs和npm的安装
+2014-01-17 10:44 18148人阅读 评论(2) 收藏 举报
+ 分类：
+ 
+
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+一.NodeJs安装
+1.下载nodejs源码，这是目前最新版本
+http://nodejs.org/dist/v0.10.24/node-v0.10.24.tar.gz
+首先确保系统安装来python,gcc,g++,如果没有则安装： 
+$ sudo apt-get install python 
+$ sudo apt-get install build-essential 
+$ sudo apt-get install gcc 
+$ sudo apt-get install g++ 
+2.解压安装包
+tar -zxf node-v0.10.24.tar.gz
+cd node-v0.10.22/
+3.编译并安装
+./configure –prefix=/opt/nodejs      #这里可以不指定目录，直接执行./configure命令也可以。
+make                                              #这里有些慢，需要耐心等待
+make install
+4，测试安装
+输入node --version测试是否安装成功，若显示版本号表示安装成功，以下是node相关参数
+anwj@Anwj:~/nodejs$ node --help
+Usage: node [options] [ -e script | script.js ] [arguments] 
+       node debug script.js [arguments] 
+
+
+Options:
+  -v, --version        print node's version
+  -e, --eval script    evaluate script
+  -p, --print          evaluate script and print result
+  -i, --interactive    always enter the REPL even if stdin
+                       does not appear to be a terminal
+  --no-deprecation     silence deprecation warnings
+  --trace-deprecation  show stack traces on deprecations
+  --v8-options         print v8 command line options
+  --max-stack-size=val set max v8 stack size (bytes)
+
+二，npm(node package manager)
+你只需要执行以下命令:
+1.curl http://npmjs.org/install.sh | sh
+如果安装过程中出现了权限问题,那么需要在 root 权限下执行上面的语句,或者使用sudo。
+curl http://npmjs.org/install.sh | sudo sh
+2其他安装方法,譬如从 git 中获取 npm 的最新分支,可以参考 http://npmjs.org/doc/README.html上的说明。
+
+==================================================
+=============华丽的分割线 ==========================
+1. 安装nodejs及npm
+nodejs官网：http://nodejs.org/安装依赖库：$ sudo apt-get install python$ sudo apt-get install build-essential$ sudo apt-get install gcc$ sudo apt-get install g++$ sudo apt-get install libssl-dev$ sudo apt-get install curl$ sudo apt-get install apache2-utils
+用wget命令下载：$ wget -c http://nodejs.org/dist/v0.10.35/node-v0.10.35.tar.gz解压：$ tar -xzvf node-v0.10.35.tar.gz进入nodejs目录：$ cd node-v0.10.35/
+默认安装： 
+$ ./configure 
+$ make 
+$ sudo make install 
+选择目录安装（将nodejs安装在/usr/local/node目录下）
+创建nodejs的安装目录路径为/usr/local/nodesudo mkdir /usr/local/node
+$ ./configure --prefix=/usr/local/node
+$ make
+$ sudo make install
+
+安装结束，可以用下面的命令检查安装的版本： 
+$ nodejs --version 或 $ nodejs -v
+v0.10.25
+npm作为一个NodeJS的模块管理。我们要先配置npm的全局模块的存放路径以及cache的路径，例如我希望将以上两个文件夹放在NodeJS的主目录下，便在NodeJs安装目录下建立“node_global”及“node_cache”两个文件夹。
+$ sudo mkdir node_global
+$ sudo mkdir node_cache
+$ npm config set prefix /usr/local/node/node_global/
+$ npm config set cache /usr/local/node/node_cache/
+xx@ubuntu:/usr/local/node$ sudo mkdir node_globalxx@ubuntu:/usr/local/node$ sudo mkdir node_cachexx@ubuntu:/usr/local/node$ lsbin include lib node_cache node_global sharexx@ubuntu:/usr/local/node$ npm config set prefix /usr/local/node/node_global/xx@ubuntu:/usr/local/node$ npm config set cache /usr/local/node/node_cache/xx@ubuntu:/usr/local/node$ 
+2. 配置环境变量
+在/etc/profile文件新增,用vim编辑器打开， 键入$ vim /etc/profile后追加以下内容：
+export NODE_HOME=/usr/local/nodeexport PATH=$PATH:$NODE_HOME/binexport NODE_PATH=$NODE_HOME/
+执行 source /etc/profile 命令让环境变量设置生效测试：在终端输入node -v如果有版本信息输出，则说明安装成功node安装完后， 环境变量也配置好后， npm也已经安装完了测试：在终端键入npm -v如果有版本信息输出， 则说明安装成功
+3. 安装模板express
+安装express过程中要创建文件夹， 所以要有root权限， 而root系统用户是检测不到npm， 所以这里用
+npm的具体路径进行安装
+# /usr/local/node/bin/npm install express -g
+root@ubuntu:/usr/local# /usr/local/node/bin/npm install express -gexpress@4.10.7 /usr/local/node/node_global/lib/node_modules/express├── merge-descriptors@0.0.2├── utils-merge@1.0.0├── methods@1.1.1├── cookie@0.1.2├── fresh@0.2.4├── escape-html@1.0.1├── range-parser@1.0.2├── cookie-signature@1.0.5├── finalhandler@0.3.3├── vary@1.0.0├── media-typer@0.3.0├── parseurl@1.3.0├── serve-static@1.7.2├── content-disposition@0.5.0├── path-to-regexp@0.1.3├── depd@1.0.0├── qs@2.3.3├── debug@2.1.1 (ms@0.6.2)├── etag@1.5.1 (crc@3.2.1)├── on-finished@2.2.0 (ee-first@1.1.0)├── proxy-addr@1.0.5 (forwarded@0.1.0, ipaddr.js@0.1.6)├── send@0.10.1 (destroy@1.0.3, ms@0.6.2, on-finished@2.1.1, mime@1.2.11)├── type-is@1.5.5 (mime-types@2.0.7)└── accepts@1.1.4 (negotiator@0.4.9, mime-types@2.0.7)root@ubuntu:/usr/local# 
+4. 安装bower
+# /usr/local/node/bin/npm install bower -g
+终端输入node, 分别检测模块express和bower：
+>require('express')>require('bower')
+查看bower的版本：
+xx@ubuntu:/usr/local/node/node_global/bin$ ./bower -v1.3.12xx@ubuntu:/usr/local/node/node_global/bin$
+5. 设置bower为全局命令
+为在全局内使用bower命令， 我们可以通过创建bower软链接或添加bower到PATH环境变量内
+创建bower软链接
+sudo ln -s /usr/local/node/node_global/bin/bower /usr/bin/bower
+（ps:删除bower软链接：$ sudo rm /usr/bin/bower）
+添加bower到PATH环境变量内
+在/etc/profile文件内追加以下内容：
+export BOWER_PATH=/usr/local/node/node_global/binexport PATH=$PATH:$BOWER_PATH
+保存退出后， 键入source /etc/profile以生效。
+以下是本人的操作顺序：
+xx@ubuntu:/usr/local/node/node_global/bin$ vim /etc/profilexx@ubuntu:/usr/local/node/node_global/bin$ source /etc/profilexx@ubuntu:/usr/local/node/node_global/bin$ bower -v1.3.12xx@ubuntu:/usr/local/node/node_global/bin$ 
+ 
+ 
+ 相关链接：win8.1下nodejs+npm+bower安装
+OK， Enjoy it!!!
+

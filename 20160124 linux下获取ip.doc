@@ -1,0 +1,96 @@
+﻿Linux下如何用C语言获得网络信息，比如IP，掩码，mac地址，网关 
+标签： linux语言网络cupnull 
+2011-10-21 09:18 2571人阅读 评论(0) 收藏 举报 
+ 分类： 
+  
+作者同类文章X
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+ 在Linux下执行以下程序：
+[cpp] view plain copy
+print?
+1. #include <stdio.h>  
+2. #include <stdlib.h>  
+3.   
+4. int main( )  
+5. {  
+6.   
+7.     FILE* netinfo = popen("/sbin/ifconfig", "r");  
+8.          
+9.     if(!netinfo){  
+10.         puts("error while open pipe");  
+11.         exit(1);  
+12.     }    
+13.   
+14.     char str[200];  
+15.          
+16.     while( fgets(str, 199, netinfo) != NULL ){   
+17.         printf("%s", str);  
+18.     }    
+19.          
+20.     pclose(netinfo);  
+21.   
+22. }  
+#include <stdio.h>
+#include <stdlib.h>
+
+int main( )
+{
+
+    FILE* netinfo = popen("/sbin/ifconfig", "r");
+       
+    if(!netinfo){
+        puts("error while open pipe");
+        exit(1);
+    }  
+
+    char str[200];
+       
+    while( fgets(str, 199, netinfo) != NULL ){ 
+        printf("%s", str);
+    }  
+       
+    pclose(netinfo);
+
+}
+
+[cpp] view plain copy
+print?
+1. [root@localhost ~]# ./test   
+2. eth0      Link encap:Ethernet  HWaddr 00:0C:29:44:FB:6D    
+3.           inet addr:192.168.232.128  Bcast:192.168.232.255  Mask:255.255.255.0  
+4.           inet6 addr: fe80::20c:29ff:fe44:fb6d/64 Scope:Link  
+5.           UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1  
+6.           RX packets:24 errors:0 dropped:0 overruns:0 frame:0  
+7.           TX packets:44 errors:0 dropped:0 overruns:0 carrier:0  
+8.           collisions:0 txqueuelen:1000   
+9.           RX bytes:7666 (7.4 KiB)  TX bytes:6087 (5.9 KiB)  
+10.           Interrupt:18 Base address:0x2024   
+11.   
+12. lo        Link encap:Local Loopback    
+13.           inet addr:127.0.0.1  Mask:255.0.0.0  
+14.           inet6 addr: ::1/128 Scope:Host  
+15.           UP LOOPBACK RUNNING  MTU:16436  Metric:1  
+16.           RX packets:1706 errors:0 dropped:0 overruns:0 frame:0  
+17.           TX packets:1706 errors:0 dropped:0 overruns:0 carrier:0  
+18.           collisions:0 txqueuelen:0   
+19.           RX bytes:2640180 (2.5 MiB)  TX bytes:2640180 (2.5 MiB)  
+[root@localhost ~]# ./test 
+eth0      Link encap:Ethernet  HWaddr 00:0C:29:44:FB:6D  
+          inet addr:192.168.232.128  Bcast:192.168.232.255  Mask:255.255.255.0
+          inet6 addr: fe80::20c:29ff:fe44:fb6d/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:24 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:44 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:7666 (7.4 KiB)  TX bytes:6087 (5.9 KiB)
+          Interrupt:18 Base address:0x2024 
+
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:16436  Metric:1
+          RX packets:1706 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:1706 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:2640180 (2.5 MiB)  TX bytes:2640180 (2.5 MiB)
+

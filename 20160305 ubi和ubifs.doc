@@ -1,0 +1,124 @@
+ ubi以及ubifs
+标签： flashfilesystemsmakefile工具nokiagit
+2010-03-17 22:30 6995人阅读 评论(2) 收藏 举报
+ 分类：  Linux（24）  
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+
+
+1、很多人在linux上面build的时候经常会遇到缺少liblzo.so之类的库文件，我记得的有在编译mplayer会出现这个错误，还有这次使用ubifs的时候也是。
+直接使用sudo apt-get install liblzo2-dev安装库文件。
+ 
+2、ubifs
+2.1、什么是ubifs？
+由IBM、nokia工程师Thomas Gleixner，Artem Bityutskiy等人于2006年发起，致力于开发性能卓越、扩展性高的FLASH专用文件系统，以解决当前嵌入式环境下以FLASH作为MTD设备使用时的技术瓶颈。
+关键字：
+UBI：一种类似于LVM的逻辑卷管理层。主要实现损益均衡，逻辑擦除块、卷管理，坏块管理等。
+UBIFS：基于UBI的FLASH日志文件系统。
+有关ubifs的详细介绍，请参考：
+http://www.linux-mtd.infradead.org/doc/ubi.html
+http://www.linux-mtd.infradead.org/doc/ubifs.html
+
+2.2、如何得到ubifs？
+2.6.22以后，ubifs活跃于git管理工程中：
+git://git.infradead.org/ubi-2.6.git
+2.6.27以后，ubifs被整合进内核树中，用户只需下载最新内核即可获取ubifs支持。
+
+2.3、如何使用ubifs？
+软件环境：
+linux-2.6.28
+arm-linux-gcc 3.4.5
+硬件环境：
+s3c2410
+k9f1208
+
+2.4、准备
+1、内核
+配置的时候选上
+1)Device Drivers  --->Memory Technology Device (MTD) support  --->UBI - Unsorted block images  --->Enable UBI
+2)File systems  --->Miscellaneous filesystems  --->UBIFS file system support
+
+2、mtd-utils工具(flash_eraseall、ubiattach、ubimkvol)准备
+1)下载(mtd-utils、zlib、lzo)源码
+wget http://debian.mirror.inra.fr/debian/pool/main/m/mtd-utils/mtd-utils_20080508.orig.tar.gz
+wget http://www.zlib.net/zlib-1.2.3.tar.gz
+wget http://www.oberhumer.com/opensource/lzo/download/lzo-2.03.tar.gz
+
+2)编译安装zlib
+tar xzvf zlib-1.2.3.tar.gz
+cd zlib-1.2.3
+CC=arm-linux-gcc ./configure --shared --prefix=/usr/local/arm/3.4.5/arm-linux
+make
+make install
+cd ..
+
+3)编译安装lzo
+tar xzvf lzo-2.03.tar.gz
+cd lzo-2.03
+CC=arm-linux-gcc ./configure --host=arm-linux --prefix=/usr/local/arm/3.4.5/arm-linux
+make
+make install
+cd ..
+
+4)编译mtd-utils
+tar xzvf mtd-utils_20080508.orig.tar.gz
+cd mtd-utils-20080508
+
+修改Makefile文件：
+#CROSS=arm-linux-
+修改为  CROSS=arm-linux-
+BUILDDIR := $(CROSS:-=)
+修改为  BUILDDIR := .
+
+修改ubi-utils/Makefile文件：
+添加    CROSS=arm-linux-
+
+修改    ubi-utils/new-utils/Makefile文件：
+添加    CROSS=arm-linux-
+
+make WITHOUT_XATTR=1
+
+ubi-utils子目录下生成我们需要的ubiattach、ubimkvol等文件(请确保是交叉编译所得)
+
+3、mtd-utils工具(mkfs.ubifs、ubinize)准备
+git-clone git://git.infradead.org/mtd-utils.git
+cd mtd-utils/
+make
+
+mkfs.ubifs子目录下生成我们需要的mkfs.ubifs工具
+ubi-utils/new-utils子目录下生成我们需要的ubinize工具
+
+
+2.5、使用
+1、使用ramfs或nfs启动系统，执行以下命令挂载ubifs：
+1)flash_eraseall /dev/mtd4
+2)ubiattach /dev/ubi_ctrl -m 4
+3)ubimkvol /dev/ubi0 -N rootfs -s 50MiB
+4)mount -t ubifs ubi0_0 /mnt或mount -t ubifs ubi0:rootfs /mnt
+
+2、如果你想使用ubifs为rootfs，把文件系统内容解压到ubifs挂载目录下，并修改内核启动参数为：
+console=ttySAC0 ubi.mtd=4 root=ubi0:rootfs rootfstype=ubifs
+
+3、如果你想直接在bootloader下烧写ubifs映像，使用以下命令制作ubi烧写映像：
+mkfs.ubifs -r rootfs -m 512 -e 15872 -c 3303 -o ubifs.img
+ubinize -o ubi.img -m 512 -p 16KiB -s 256 ubinize.cfg
+
+其中：
+1)以上命令的参数可从ubifs挂载信息中提取：
+UBI: attaching mtd4 to ubi0                                                     
+UBI: physical eraseblock size:   16384 bytes (16 KiB)                           
+UBI: logical eraseblock size:    15872 bytes                                    
+UBI: smallest flash I/O unit:    512                                            
+UBI: sub-page size:              256                                            
+UBI: VID header offset:          256 (aligned 256)                              
+UBI: data offset:                512                                            
+UBI: attached mtd4 to ubi0              
+
+2)配置文件ubinize.cfg的内容为：
+[ubifs]
+mode=ubi
+image=ubifs.img
+vol_id=0
+vol_size=50MiB
+vol_type=dynamic
+vol_name=rootfs
+vol_flags=autoresize

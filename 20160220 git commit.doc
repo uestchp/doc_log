@@ -1,0 +1,224 @@
+﻿git-commit 
+git-commit
+ 
+软件版本：
+　　操作系统：ubuntu10.04
+    内核版本：Linux version 2.6.32-36-generic
+    git 版本：git version 1.7.0.4
+目录：
+　　1. 文件状态
+　　2. 提交
+　　　　2.1 git commit 与 git commit -a
+　　　　2.2 添加提交信息
+　　3. 修改/取消
+　　4. 参考资料
+1. 文件状态
+　　一般仓库中的文件可能存在于这三种状态：
+    1）Untracked files → 文件未被跟踪；
+    2）Changes to be committed → 文件已暂存，这是下次提交的内容；
+    3) Changes bu not updated → 文件被修改，但并没有添加到暂存区。如果 commit 时没有带 -a 选项，这个状态下的文件不会被提交。
+
+$git status
+# On branch master
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#    new file:   file2
+#
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#    modified:   file
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#    file3
+
+2. 提交
+　　git 提交的命令为：git commit 。
+2.1 git commit 与 git commit -a
+　　git commit 提交的是暂存区里面的内容，也就是 Changes to be committed 中的文件。
+
+$git commit 
+[master 5b61c29] run git commit
+ 0 files changed, 0 insertions(+), 0 deletions(-)
+ create mode 100644 file2
+$git status
+# On branch master
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#    modified:   file
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#    file3
+
+　　git commit -a 除了将暂存区里的文件提交外，还提交 Changes bu not updated 中的文件。
+
+$git commit -a
+[master bd77524] run git commit -a
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+ create mode 100644 file2
+$git status
+# On branch master
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#    file3
+
+2.2 添加提交信息
+　　如果直接运行 git commit (-a) 则会默认使用 vi 添加描述。也可以使用 git config --global core.editor 命令更改为你喜欢的编辑器。还有一个方法就是使用 -m 选项直接添加提交信息。
+$git commit -a -m "commit info"
+3. 修改/取消
+　　有时候我们会发现有几个文件漏了提交或者想修改一下提交信息，又或者忘记使用 -a 选项导致一些文件没有被提交，我们希望对上一次提交进行修改，或者说取消上一次提交，这时候我们需要使用 --amend 选项。
+$git commit --amend
+　　可以对上一次提交进行修改，比如我们发现漏了 file3 没有提交，我们可以运行一下操作：
+
+$git status
+# On branch master
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#    file3
+nothing added to commit but untracked files present (use "git add" to track)
+$git add file3
+$git commit --amend 
+[master 671f5cc] commit --amend, add file3
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+ create mode 100644 file2
+ create mode 100644 file3
+$git status
+# On branch master
+nothing to commit (working directory clean)
+
+　　又或者我们发现在提交时忘记使用 -a 选项，导致 Changes bu not updated 中的内容没有被提交，我们可以使用：
+$git commit --amend -a
+4. 参考资料
+[1] 《pro git》
+
+
+
+
+git commit -a命令困惑
+Git · zlx_star · 於 發佈 · 最後由 zlx_star 於 回覆 · 22707 次閱讀 
+ 
+
+
+
+共收到 15 条回复 
+
+hungyuhei · #1 · 
+我当时是看这本书的 http://git-scm.com/book/zh 
+
+shaorui23 · #2 · 
+今天还刚刚看到这个文档，挺不错的 http://marklodato.github.com/visual-git-guide/index-zh-cn.html 
+
+primemars · #3 · 
+这个可以作为娱乐 https://github.com/Gazler/githug 
+
+tech_blogbin · #4 · 
+Pro Git中文版
+http://progit.org/book/zh/
+Git Communitiy
+http://book.git-scm.com/
+Git Magic
+http://www-cs-students.stanford.edu/blynn/gitmagic/intl/zh_cn/book.pdf~
+Git权威指南
+http://book.douban.com/subject/6526452/ 
+
+huacnlee · #5 · 
+-A 吧 
+
+zlx_star · #6 · 
+感谢各位，但是我这里环境比较恶劣，除了 http://book.douban.com/subject/6526452/ 这个链接 OK 外，其它的都无法访问。 
+@shaorui23 这个链接就是我的问题所在，它和 git 的帮助文档不一致。
+@primemars 这个游戏刚刚玩过，做的很好，让我对 git 更了解了。:-)
+@huacnlee -A ？
+在我的版本中，没有 -A 这个参数
+详见
+$ git --version
+git version 1.7.1
+
+$ git commit -A
+error: unknown switch `A'
+usage: git commit [options] [--] <filepattern>...
+
+    -q, --quiet           be quiet
+    -v, --verbose         be verbose
+
+Commit message options
+    -F, --file <FILE>     read log from file
+    --author <AUTHOR>     override author for commit
+    --date <DATE>         override date for commit
+    -m, --message <MESSAGE>
+                          specify commit message
+    -c, --reedit-message <COMMIT>
+                          reuse and edit message from specified commit
+    -C, --reuse-message <COMMIT>
+                          reuse message from specified commit
+    --reset-author        the commit is authored by me now (used with -C-c/--amend)
+    -s, --signoff         add Signed-off-by:
+    -t, --template <FILE>
+                          use specified template file
+    -e, --edit            force edit of commit
+    --cleanup <default>   how to strip spaces and #comments from message
+    --status              include status in commit message template
+
+Commit contents options
+    -a, --all             commit all changed files
+    -i, --include         add specified files to index for commit
+    --interactive         interactively add files
+    -o, --only            commit only specified files
+    -n, --no-verify       bypass pre-commit hook
+    --dry-run             show what would be committed
+    --short               show status concisely
+    --porcelain           show porcelain output format
+    -z, --null            terminate entries with NUL
+    --amend               amend previous commit
+    --no-post-rewrite     bypass post-rewrite hook
+    -u, --untracked-files[=<mode>]
+                          show untracked files, optional modes: all, normal, no. (Default: all)
+    --allow-empty         ok to record an empty change
+所以是不是 http://marklodato.github.com/visual-git-guide/index-zh-cn.html 这里面写错了？ 
+
+serho · #7 · 
+Pro Git 这本书中解释的是：
+在修改文件后，需要使用git add把文件加入暂存区，这样git commit时才能把已经修改的信息加入版本库，而使用git commit -a可以不用再git add。 
+
+AshZ · #8 · 
+英文解释是完全正确的，图解 git 的中文解释只是助于理解的，忽略了细节，完全没有提及新文件是不会被加入到暂存区，正因为这个原因，一般都不推荐使用git commit -a，还是推荐先git add再git commit。
+@huacnlee 所提 -A 应该是指git add -A，跟楼主问题无关。
+资料我也推荐 Pro Git ，可去新浪爱问搜搜看。 
+
+tassandar · #9 · 
+我在实际中偶尔会用 git commit -am “some sthing”
+这个命令会让当前在暂存区里面的文件修改保存并且 commit ，但是 untracted files 不会被加入到仓库区。
+你可以试一下. 
+
+huacnlee · #10 · 
+@AshZ 哦，不好意思，我看成 add 了 
+
+chentianwen · #11 · 
+git commit -a是把unstaged的文件变成staged（这里不包括新建(untracked)的文件），然后commit 
+
+fsword · #12 · 
+#8楼 @AshZ 我是来顶这个回复的，耐心、细致、全面 
+
+camel · #13 · 1 个赞 
+如果修改的文件需要全部提交，我一般都是
+git commit -am "commit messages"
+如果修改的文件只提交一部分，用
+git add -p
+git commit -m "commit messages"
+
+dfang · #14 · 
+@camel 这个说的最清楚 , 其实上面的命令帮助里说的很清楚了 
+
+zlx_star · #15 · 
+谢谢 @camel 谢谢大家，我现在理解啦。 
+

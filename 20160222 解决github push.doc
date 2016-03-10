@@ -1,0 +1,28 @@
+﻿ 
+解决github push错误The requested URL returned error: 403 Forbidden while accessing
+2013-09-11 09:51 17400人阅读 评论(19) 收藏 举报
+ 分类：
+ 
+
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+github push错误：
+[html] view plain copy
+ print?
+1. git push  
+2. error: The requested URL returned error: 403 Forbidden while accessing https://github.com/wangz/future.git/info/refs  
+git version 1.7.1
+OS:CENTOS
+解决方案：
+vim .git/config
+修改
+[plain] view plain copy
+ print?
+1. [remote "origin"]  
+2.     url = https://github.com/wangz/example.git  
+为：
+[plain] view plain copy
+ print?
+1. [remote "origin"]  
+2.     url = https://wangz@github.com/wangz/example.git  
+再次git push，弹出框输入密码，即可提交
+

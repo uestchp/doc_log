@@ -1,0 +1,117 @@
+﻿ U-boot 添加命令 U_BOOT_CMD 2013-02-01 16:51:49
+分类： LINUX
+U-boot 添加命令 U_BOOT_CMD 
+U-Boot的每一个命令都是通过U_BOOT_CMD宏定义的。这个宏在include/command.h头文件中定义，每一个命令定义一个cmd_tbl_t结构体。
+
+    /*命令宏U_BOOT_CMD*/  
+    #define U_BOOT_CMD(name,maxargs,rep,cmd,usage,help) \  
+    cmd_tbl_t    __u_boot_cmd_##name     Struct_Section = {#name, maxargs, rep, cmd, usage, help}  
+
+
+每一个命令宏U_BOOT_CMD用cmd_tbl_t结构体描述一个命令
+
+    struct cmd_tbl_s {  
+        char        *name;      /* Command Name         */  
+        int     maxargs;    /* maximum number of arguments  */  
+        int     repeatable; /* autorepeat allowed?      */  
+                        /* Implementation function  */  
+        int     (*cmd)(struct cmd_tbl_s *, int, int, char *[]);  
+        char        *usage;     /* Usage message    (short) */  
+    #ifdef  CFG_LONGHELP  
+        char        *help;      /* Help  message    (long)  */  
+    #endif  
+    #ifdef CONFIG_AUTO_COMPLETE  
+        /* do auto completion on the arguments */  
+        int     (*complete)(int argc, char *argv[], char last_char, int maxv, char *cmdv[]);  
+    #endif  
+    };  
+
+参数意义是：
+
+name     这是命令名字，不需要用双引号括起来
+maxargs     最大参数的个数
+rep     命令是否可重复，就是下一次按回车时再执行
+cmd     对应的函数指针
+usage     字符串表示的简短说明
+help     字符串表示的详细说明
+
+在源代码里可发现命令都是在cmd_xxx.c里实现的
+
+现在我们添加一个简单的测试命令
+
+1、在common目录下添加一个hello.c文件
+
+    #include <common.h>  
+    #include <command.h>  
+      
+    #ifdef CONFIG_CMD_HELLO   
+    int do_hello(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])  
+    {  
+        int i;  
+        printf("argc = %d\n",argc);  
+        for(i = 0; i < argc; i++)  
+            printf("i = %d, %s\n",i,argv[i]);  
+        return 0;  
+    }  
+    U_BOOT_CMD(hello,CONFIG_SYS_MAXARGS,0,do_h  
+
+do_xxx函数必须定义成这样形式：
+
+    cmd_tbl_s 结构体里的成员  int (*cmd)(struct cmd_tbl_s *, int, int, char *[]);  
+
+int do_hello(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+
+ 
+
+在填参数个数时要注意，CONFIG_SYS_MAXARGS是在include/configs/smdk2140.h里定义的，默认16
+2、在common/Makefile中的#command添加如下内容：
+         COBJS-$(CONFIG_CMD_TEST) += cmd_hello.o
+3、在include/configs/smdk2410.h(该文件名根据实际操作，要针对自己的平台文件改，如smdk2410.h等)添加如下内容：
+         在#include <config_cmd_default.h>后添加：
+              #define CONFIG_CMD_HELLO
+        或者在include/config_cmd_default.h文件中，添加该命令的宏定义。 
+4、编译后下到板上
+
+    U-Boot 2009.11 (12鏈?14 2011 - 00:44:00)  
+      
+      
+    DRAM:  64 MB  
+      
+    Flash: 512 kB  
+      
+    NAND:  NAND_ECC_NONE selected by board driver. This is not recommended !!  
+      
+    64 MiB  
+      
+    In:    serial  
+      
+    Out:   serial  
+      
+    Err:   serial  
+      
+    Net:   dm9000  
+      
+    Hit any key to stop autoboot:  0   
+      
+    BAI2011/12/13 # hello  
+      
+    argc = 1  
+      
+    i = 0, hello  
+      
+    BAI2011/12/13 # hello this is my test!  
+      
+    argc = 5  
+      
+    i = 0, hello  
+      
+    i = 1, this  
+      
+    i = 2, is  
+      
+    i = 3, my  
+      
+    i = 4, test!  
+      
+    BAI2011/12/13 #   
+

@@ -1,0 +1,18 @@
+﻿cp -rf `ls |grep -E -v "^(.cgi)$"` /var/www/bcm_web/
+ls后面可以接原目录
+/var/www/bcm_web/ 可以换成相应的目的目录
+
+
+cp命令如何排除不想拷贝的子目录 
+标签： linuxcp 
+2015-05-21 17:28 731人阅读 评论(0) 收藏 举报 
+ 分类： 
+ 
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+想使用CP拷贝一个大目录（/home/study/test），但又不想拷贝其中的一个子目录(/home/study/test/test1)，应该如何写命令行
+方法：
+1. cd /home/study/test
+2. rsync -av --exclude  test1/ --exlclude test2/  ../test/  /home/copydir
+
+以上，便可将/home/study/test目录中，除test1和test2目录外，其他所有的文件和文件夹copy到/home/copydir
+

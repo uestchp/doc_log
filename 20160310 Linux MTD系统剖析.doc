@@ -1,0 +1,227 @@
+﻿Linux MTD系统剖析 
+2014-03-19 20:37 7591人阅读 评论(2) 收藏 举报 
+ 分类： 
+ 
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+MTD，Memory Technology Device即内存技术设备，在Linux内核中，引入MTD层为NOR FLASH和NAND FLASH设备提供统一接口。MTD将文件系统与底层FLASH存储器进行了隔离。
+
+如上图所示，MTD设备通常可分为四层，从上到下依次是：设备节点、MTD设备层、MTD原始设备层、硬件驱动层。
+Flash硬件驱动层：Flash硬件驱动层负责对Flash硬件的读、写和擦除操作。MTD设备的Nand Flash芯片的驱动则drivers/mtd/nand/子目录下,Nor Flash芯片驱动位于drivers/mtd/chips/子目录下。
+MTD原始设备层：用于描述MTD原始设备的数据结构是mtd_info，它定义了大量的关于MTD的数据和操作函数。其中mtdcore.c:  MTD原始设备接口相关实现，mtdpart.c :  MTD分区接口相关实现。
+MTD设备层：基于MTD原始设备，linux系统可以定义出MTD的块设备（主设备号31）和字符设备（设备号90）。其中mtdchar.c :  MTD字符设备接口相关实现，mtdblock.c : MTD块设备接口相关实现。
+设备节点：通过mknod在/dev子目录下建立MTD块设备节点（主设备号为31）和MTD字符设备节点（主设备号为90）。通过访问此设备节点即可访问MTD字符设备和块设备 
+MTD数据结构：
+1.Linux内核使用mtd_info结构体表示MTD原始设备，这其中定义了大量关于MTD的数据和操作函数（后面将会看到），所有的mtd_info结构体存放在mtd_table结构体数据里。在/drivers/mtd/mtdcore.c里：
+[cpp] view plain copy
+print?
+1. struct mtd_info *mtd_table[MAX_MTD_DEVICES];  
+2.Linux内核使用mtd_part结构体表示分区，其中mtd_info结构体成员用于描述该分区，大部分成员由其主分区mtd_part->master决定，各种函数也指向主分区的相应函数。 
+[cpp] view plain copy
+print?
+1. struct mtd_part {  
+2.     struct mtd_info mtd;        /* 分区信息, 大部分由master决定 */  
+3.     struct mtd_info *master;    /* 分区的主分区 */  
+4.     uint64_t offset;            /* 分区的偏移地址 */  
+5.     int index;                  /* 分区号 (Linux3.0后不存在该字段) */  
+6.     struct list_head list;      /* 将mtd_part链成一个链表mtd_partitons */  
+7.     int registered;  
+8. };  
+mtd_info结构体主要成员，为了便于观察，将重要的数据放在前面，不大重要的编写在后面。 
+[cpp] view plain copy
+print?
+1. struct mtd_info {  
+2.     u_char type;         /* MTD类型，包括MTD_NORFLASH,MTD_NANDFLASH等(可参考mtd-abi.h) */  
+3.     uint32_t flags;      /* MTD属性标志，MTD_WRITEABLE,MTD_NO_ERASE等(可参考mtd-abi.h) */  
+4.     uint64_t size;       /* mtd设备的大小 */  
+5.     uint32_t erasesize;  /* MTD设备的擦除单元大小，对于NandFlash来说就是Block的大小 */  
+6.     uint32_t writesize;  /* 写大小, 对于norFlash是字节,对nandFlash为一页 */  
+7.     uint32_t oobsize;    /* OOB字节数 */  
+8.     uint32_t oobavail;   /* 可用的OOB字节数 */  
+9.     unsigned int erasesize_shift;   /* 默认为0，不重要 */  
+10.     unsigned int writesize_shift;   /* 默认为0，不重要 */  
+11.     unsigned int erasesize_mask;    /* 默认为1，不重要 */  
+12.     unsigned int writesize_mask;    /* 默认为1，不重要 */  
+13.     const char *name;               /* 名字，   不重要*/  
+14.     int index;                      /* 索引号，不重要 */  
+15.     int numeraseregions;            /* 通常为1 */  
+16.     struct mtd_erase_region_info *eraseregions; /* 可变擦除区域 */  
+17.       
+18.     void *priv;     /* 设备私有数据指针，对于NandFlash来说指nand_chip结构体 */  
+19.     struct module *owner;   /* 一般设置为THIS_MODULE */  
+20.       
+21.     /* 擦除函数 */  
+22.     int (*erase) (struct mtd_info *mtd, struct erase_info *instr);  
+23.   
+24.     /* 读写flash函数 */  
+25.     int (*read) (struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, u_char *buf);  
+26.     int (*write) (struct mtd_info *mtd, loff_t to, size_t len, size_t *retlen, const u_char *buf);  
+27.   
+28.     /* 带oob读写Flash函数 */  
+29.     int (*read_oob) (struct mtd_info *mtd, loff_t from,  
+30.              struct mtd_oob_ops *ops);  
+31.     int (*write_oob) (struct mtd_info *mtd, loff_t to,  
+32.              struct mtd_oob_ops *ops);  
+33.   
+34.     int (*get_fact_prot_info) (struct mtd_info *mtd, struct otp_info *buf, size_t len);  
+35.     int (*read_fact_prot_reg) (struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, u_char *buf);  
+36.     int (*get_user_prot_info) (struct mtd_info *mtd, struct otp_info *buf, size_t len);  
+37.     int (*read_user_prot_reg) (struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, u_char *buf);  
+38.     int (*write_user_prot_reg) (struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, u_char *buf);  
+39.     int (*lock_user_prot_reg) (struct mtd_info *mtd, loff_t from, size_t len);  
+40.   
+41.     int (*writev) (struct mtd_info *mtd, const struct kvec *vecs, unsigned long count, loff_t to, size_t *retlen);  
+42.     int (*panic_write) (struct mtd_info *mtd, loff_t to, size_t len, size_t *retlen, const u_char *buf);  
+43.     /* Sync */  
+44.     void (*sync) (struct mtd_info *mtd);  
+45.   
+46.     /* Chip-supported device locking */  
+47.     int (*lock) (struct mtd_info *mtd, loff_t ofs, uint64_t len);  
+48.     int (*unlock) (struct mtd_info *mtd, loff_t ofs, uint64_t len);  
+49.   
+50.     /* 电源管理函数 */  
+51.     int (*suspend) (struct mtd_info *mtd);  
+52.     void (*resume) (struct mtd_info *mtd);  
+53.   
+54.     /* 坏块管理函数 */  
+55.     int (*block_isbad) (struct mtd_info *mtd, loff_t ofs);  
+56.     int (*block_markbad) (struct mtd_info *mtd, loff_t ofs);  
+57.   
+58.     void (*unpoint) (struct mtd_info *mtd, loff_t from, size_t len);  
+59.     unsigned long (*get_unmapped_area) (struct mtd_info *mtd,  
+60.                         unsigned long len,  
+61.                         unsigned long offset,  
+62.                         unsigned long flags);  
+63.     struct backing_dev_info *backing_dev_info;  
+64.     struct notifier_block reboot_notifier;  /* default mode before reboot */  
+65.   
+66.     /* ECC status information */  
+67.     struct mtd_ecc_stats ecc_stats;  
+68.     int subpage_sft;  
+69.     struct device dev;  
+70.     int usecount;  
+71.     int (*get_device) (struct mtd_info *mtd);  
+72.     void (*put_device) (struct mtd_info *mtd);  
+73. };  
+mtd_info结构体中的read()、write()、read_oob()、write_oob()、erase()是MTD设备驱动要实现的主要函数，幸运的是Linux大牛已经帮我们实现了一套适合大部分FLASH设备的mtd_info成员函数。 
+如果MTD设备只有一个分区，那么使用下面两个函数注册和注销MTD设备。
+[cpp] view plain copy
+print?
+1. int add_mtd_device(struct mtd_info *mtd)  
+2. int del_mtd_device (struct mtd_info *mtd)  
+如果MTD设备存在其他分区，那么使用下面两个函数注册和注销MTD设备。
+[cpp] view plain copy
+print?
+1. int add_mtd_partitions(struct mtd_info *master,const struct mtd_partition *parts,int nbparts)  
+2. int del_mtd_partitions(struct mtd_info *master)  
+其中mtd_partition结构体表示分区的信息 
+[cpp] view plain copy
+print?
+1. struct mtd_partition {  
+2.     char *name;             /* 分区名，如TQ2440_Board_uboot、TQ2440_Board_kernel、TQ2440_Board_yaffs2 */  
+3.     uint64_t size;          /* 分区大小 */  
+4.     uint64_t offset;        /* 分区偏移值 */  
+5.     uint32_t mask_flags;    /* 掩码标识，不重要 */  
+6.     struct nand_ecclayout *ecclayout;   /* OOB布局 */  
+7.     struct mtd_info **mtdp;     /* pointer to store the MTD object */  
+8. };  
+9. 其中nand_ecclayout结构体：  
+10. struct nand_ecclayout {  
+11.     __u32 eccbytes;     /* ECC字节数 */  
+12.     __u32 eccpos[64];   /* ECC校验码在OOB区域存放位置 */  
+13.     __u32 oobavail;       
+14.     /* 除了ECC校验码之外可用的OOB字节数 */  
+15.     struct nand_oobfree oobfree[MTD_MAX_OOBFREE_ENTRIES];  
+16. };  
+关于nand_ecclayout结构体实例，更多可参考drivers/mtd/nand/nand_base.c下的nand_oob_8、nand_oob_16、nand_oob_64实例。
+MTD设备层： 
+mtd字符设备接口：
+/drivers /mtd/mtdchar.c文件实现了MTD字符设备接口，通过它，可以直接访问Flash设备，与前面的字符驱动一样，通过 file_operations结构体里面的open()、read()、write()、ioctl()可以读写Flash，通过一系列IOCTL 命令可以获取Flash 设备信息、擦除Flash、读写NAND 的OOB、获取OOB layout 及检查NAND 坏块等(MEMGETINFO、MEMERASE、MEMREADOOB、MEMWRITEOOB、MEMGETBADBLOCK IOCRL) 
+mtd块设备接口：
+/drivers /mtd/mtdblock.c文件实现了MTD块设备接口，主要原理是将Flash的erase block 中的数据在内存中建立映射，然后对其进行修改，最后擦除Flash 上的block，将内存中的映射块写入Flash 块。整个过程被称为read/modify/erase/rewrite 周期。 但是，这样做是不安全的，当下列操作序列发生时，read/modify/erase/poweroff，就会丢失这个block 块的数据。
+MTD硬件驱动层：
+Linux 内核再MTD层下实现了通用的NAND驱动(/driver/mtd/nand/nand_base.c)，因此芯片级的NAND驱动不再需要实现 mtd_info结构体中的read()、write()、read_oob()、write_oob()等成员函数。
+MTD使用nand_chip来表示一个NAND FLASH芯片, 该结构体包含了关于Nand Flash的地址信息,读写方法,ECC模式,硬件控制等一系列底层机制。
+[cpp] view plain copy
+print?
+1. struct nand_chip {  
+2.     void  __iomem   *IO_ADDR_R;     /* 读8位I/O线地址 */  
+3.     void  __iomem   *IO_ADDR_W;     /* 写8位I/O线地址 */  
+4.   
+5.     /* 从芯片中读一个字节 */  
+6.     uint8_t (*read_byte)(struct mtd_info *mtd);       
+7.     /* 从芯片中读一个字 */  
+8.     u16     (*read_word)(struct mtd_info *mtd);       
+9.     /* 将缓冲区内容写入芯片 */  
+10.     void    (*write_buf)(struct mtd_info *mtd, const uint8_t *buf, int len);      
+11.     /* 读芯片读取内容至缓冲区/ */  
+12.     void    (*read_buf)(struct mtd_info *mtd, uint8_t *buf, int len);  
+13.     /* 验证芯片和写入缓冲区中的数据 */  
+14.     int     (*verify_buf)(struct mtd_info *mtd, const uint8_t *buf, int len);  
+15.     /* 选中芯片 */  
+16.     void    (*select_chip)(struct mtd_info *mtd, int chip);  
+17.     /* 检测是否有坏块 */  
+18.     int     (*block_bad)(struct mtd_info *mtd, loff_t ofs, int getchip);  
+19.     /* 标记坏块 */  
+20.     int     (*block_markbad)(struct mtd_info *mtd, loff_t ofs);  
+21.     /* 命令、地址、数据控制函数 */  
+22.     void    (*cmd_ctrl)(struct mtd_info *mtd, int dat,unsigned int ctrl);  
+23.     /* 设备是否就绪 */  
+24.     int     (*dev_ready)(struct mtd_info *mtd);  
+25.     /* 实现命令发送 */  
+26.     void    (*cmdfunc)(struct mtd_info *mtd, unsigned command, int column, int page_addr);  
+27.     int     (*waitfunc)(struct mtd_info *mtd, struct nand_chip *this);  
+28.     /* 擦除命令的处理 */  
+29.     void    (*erase_cmd)(struct mtd_info *mtd, int page);  
+30.     /* 扫描坏块 */  
+31.     int     (*scan_bbt)(struct mtd_info *mtd);  
+32.     int     (*errstat)(struct mtd_info *mtd, struct nand_chip *this, int state, int status, int page);  
+33.     /* 写一页 */  
+34.     int     (*write_page)(struct mtd_info *mtd, struct nand_chip *chip,  
+35.                       const uint8_t *buf, int page, int cached, int raw);  
+36.   
+37.     int     chip_delay;         /* 由板决定的延迟时间 */  
+38.     /* 与具体的NAND芯片相关的一些选项，如NAND_NO_AUTOINCR，NAND_BUSWIDTH_16等 */  
+39.     unsigned int    options;      
+40.   
+41.     /* 用位表示的NAND芯片的page大小，如某片NAND芯片 
+42.      * 的一个page有512个字节，那么page_shift就是9  
+43.      */  
+44.     int      page_shift;  
+45.     /* 用位表示的NAND芯片的每次可擦除的大小，如某片NAND芯片每次可 
+46.      * 擦除16K字节(通常就是一个block的大小)，那么phys_erase_shift就是14 
+47.      */  
+48.     int      phys_erase_shift;  
+49.     /* 用位表示的bad block table的大小，通常一个bbt占用一个block， 
+50.      * 所以bbt_erase_shift通常与phys_erase_shift相等 
+51.      */  
+52.     int      bbt_erase_shift;  
+53.     /* 用位表示的NAND芯片的容量 */  
+54.     int      chip_shift;  
+55.     /* NADN FLASH芯片的数量 */  
+56.     int      numchips;  
+57.     /* NAND芯片的大小 */  
+58.     uint64_t chipsize;  
+59.     int      pagemask;  
+60.     int      pagebuf;  
+61.     int      subpagesize;  
+62.     uint8_t  cellinfo;  
+63.     int      badblockpos;  
+64.     nand_state_t    state;  
+65.     uint8_t     *oob_poi;  
+66.     struct nand_hw_control  *controller;  
+67.     struct nand_ecclayout   *ecclayout; /* ECC布局 */  
+68.       
+69.     struct nand_ecc_ctrl ecc;   /* ECC校验结构体，里面有大量的函数进行ECC校验 */  
+70.     struct nand_buffers *buffers;  
+71.     struct nand_hw_control hwcontrol;  
+72.     struct mtd_oob_ops ops;  
+73.     uint8_t     *bbt;  
+74.     struct nand_bbt_descr   *bbt_td;  
+75.     struct nand_bbt_descr   *bbt_md;  
+76.     struct nand_bbt_descr   *badblock_pattern;  
+77.     void        *priv;  
+78. };  
+最后，我们来用图表的形式来总结一下，MTD设备层、MTD原始设备层、FLASH硬件驱动层之间的联系。 
+
+
+

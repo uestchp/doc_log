@@ -1,0 +1,32 @@
+﻿apache 无法访问根目录下的子目录——（笔记） 
+2015-05-08 20:28 852人阅读 评论(0) 收藏 举报 
+ 分类： 
+ 
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+只需加多Indexes
+<Directory "D:/wamp/www">
+    Options Indexes FollowSymLinks ExecCGI
+    Order allow,deny
+    Allow from all
+    AllowOverride All
+</Directory> 
+
+Modified by hp
+把
+/etc/apache2/sites-available/default
+在 Options后增加 Indexes
+
+<VirtualHost *:80>
+	ServerAdmin webmaster@localhost
+
+	DocumentRoot /var/www
+	<Directory />
+		Options Indexes FollowSymLinks
+		AllowOverride None
+	</Directory>
+	<Directory /var/www/>
+		Options Indexes FollowSymLinks MultiViews
+		AllowOverride None
+		Order allow,deny
+		allow from all
+	</Directory>
